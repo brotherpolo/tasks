@@ -482,6 +482,33 @@
       emit();
       return { added, total: data.tasks.length };
     },
+    /** Bulk add/update from a spreadsheet. items: [{ id?, patch }].
+        A known id I own is updated; anything else becomes a new task. One re-render at the end. */
+    importTasks(items, keepIds) {
+      let added = 0, updated = 0, skipped = 0;
+      const now = Date.now();
+      items.forEach((it) => {
+        const ex = it.id ? S.get(it.id) : null;
+        if (ex) {
+          if (!S.isOwner(ex)) { skipped++; return; } // someone else's task: change it in the app
+          const patch = Object.assign({}, it.patch);
+          if ('done' in patch && patch.done !== !!ex.done) patch.doneAt = patch.done ? now : null;
+          Object.assign(ex, patch, { updatedAt: now });
+          commit(ex.id, true); updated++;
+        } else {
+          const t = Object.assign({
+            id: keepIds && it.id && /^[\w-]{3,64}$/.test(it.id) ? it.id : C.uid('t'), title: 'Untitled task', notes: '', typeId: state.prefs.defaultType || null,
+            levelId: state.prefs.defaultLevel || (state.levels[0] && state.levels[0].id), due: null, time: null,
+            done: false, doneAt: null, createdAt: now, updatedAt: now, subtasks: [], repeat: 'none'
+          }, it.patch);
+          if (t.done && !t.doneAt) t.doneAt = now;
+          state.tasks.push(t);
+          commit(t.id, true); added++;
+        }
+      });
+      emit();
+      return { added, updated, skipped };
+    },
     resetAll() {
       // tasks other people assigned to you stay; hand them back to remove them
       const ids = state.tasks.filter((t) => S.isOwner(t)).map((t) => t.id);
