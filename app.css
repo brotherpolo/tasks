@@ -199,6 +199,7 @@ textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent
 .side-type span:nth-child(2) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-type.on { background: color-mix(in oklab, var(--c) 14%, var(--surface)); color: color-mix(in oklab, var(--c) 70%, var(--ink)); font-weight: 600; box-shadow: inset 3px 0 0 var(--c); }
 .side-type.on .muted { color: inherit; }
+.side-dot { width: 10px; height: 10px; margin: 0 3px; box-shadow: 0 0 0 3px color-mix(in oklab, var(--c) 22%, transparent); }
 .side-foot { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 4px 0; border-top: 1px solid var(--line); }
 .sync-pill { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-xs); font-weight: 600; color: var(--ink-3); }
 .sync-pill .ic { width: 15px; height: 15px; }

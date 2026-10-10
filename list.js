@@ -91,7 +91,14 @@
       else { ui.types.clear(); ui.types.add(id); }
       filtersChanged();
     },
-    clearTypes() { ui.types.clear(); filtersChanged(); }
+    clearTypes() { ui.types.clear(); filtersChanged(); },
+    activeLevels() { return ui.levels; },
+    filterLevel(id) {
+      if (ui.levels.size === 1 && ui.levels.has(id)) ui.levels.clear();
+      else { ui.levels.clear(); ui.levels.add(id); }
+      filtersChanged();
+    },
+    clearLevels() { ui.levels.clear(); filtersChanged(); }
   };
   function filtersChanged() {
     if (el) { renderFilters(); renderBody(); }
