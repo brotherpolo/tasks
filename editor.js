@@ -3,6 +3,11 @@
   const C = window.Cadence;
   const { D, esc, icon } = C;
   let open = null;
+  // People shown as one-tap pills under "Assigned to" (emails in lowercase)
+  const QUICK_ASSIGN = [
+    { name: 'Adam', email: 'adampollack@gmail.com' },
+    { name: 'Farren', email: 'farrenapplebaum@gmail.com' }
+  ];
 
   C.openEditor = function (idOrPreset) {
     const S = C.store;
@@ -94,11 +99,20 @@
     }
     function assignField() {
       const me = S.me() || {};
-      const people = S.people().filter((p) => p.uid !== S.state.owner);
-      if (assignee && !people.some((p) => p.uid === assignee.uid)) people.unshift(assignee);
+      const recent = S.people();
+      // quick-assign pills, minus whoever is signed in (they already have "Me")
+      const favs = QUICK_ASSIGN.filter((f) => f.email !== me.email).map((f) => {
+        const known = recent.find((p) => (p.email || '').toLowerCase() === f.email);
+        return { uid: known ? known.uid : '', name: f.name, email: f.email };
+      });
+      const isFav = (p) => favs.some((f) => (p.email && p.email.toLowerCase() === f.email) || (f.uid && p.uid === f.uid));
+      const people = recent.filter((p) => p.uid !== S.state.owner && !isFav(p));
+      if (assignee && !isFav(assignee) && !people.some((p) => p.uid === assignee.uid)) people.unshift(assignee);
+      const favOn = (f) => !!(assignee && (((assignee.email || '').toLowerCase() === f.email) || (f.uid && assignee.uid === f.uid)));
       return '<div class="field"><span class="field-label">Assigned to</span>' +
         '<div class="chips">' +
         '<button type="button" class="chip' + (!assignee ? ' on' : '') + '" data-assign="" aria-pressed="' + !assignee + '">' + C.avatar({ uid: S.state.owner, name: me.name, email: me.email }) + 'Me</button>' +
+        favs.map((f) => '<button type="button" class="chip' + (favOn(f) ? ' on' : '') + '" data-assign-email="' + esc(f.email) + '" aria-pressed="' + favOn(f) + '" title="' + esc(f.email) + '"' + (assignBusy ? ' disabled' : '') + '>' + C.avatar(f) + esc(f.name) + '</button>').join('') +
         people.map((p) => '<button type="button" class="chip' + (assignee && assignee.uid === p.uid ? ' on' : '') + '" data-assign="' + esc(p.uid) + '" aria-pressed="' + !!(assignee && assignee.uid === p.uid) + '" title="' + esc(p.email || '') + '">' + C.avatar(p) + esc(p.name || p.email) + '</button>').join('') +
         '</div>' +
         '<div class="assign-find"><label class="input-wrap">' + icon('search') + '<span class="sr">Assign by email</span><input id="ed-assign" type="email" inputmode="email" autocomplete="off" placeholder="Assign by email"></label>' +
@@ -106,9 +120,9 @@
         (assignMsg ? '<p class="field-msg" role="status">' + esc(assignMsg) + '</p>' : '') +
         '</div>';
     }
-    async function findAssignee() {
-      const email = (body.querySelector('#ed-assign') || {}).value || '';
-      assignQuery = email;
+    async function findAssignee(fromPill) {
+      const email = fromPill || (body.querySelector('#ed-assign') || {}).value || '';
+      if (!fromPill) assignQuery = email;
       const e = email.trim().toLowerCase();
       if (!e) { assignMsg = 'Type the email address they sign in with.'; sync(); return render(); }
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) { assignMsg = 'That email address doesn’t look right.'; sync(); return render(); }
@@ -118,8 +132,13 @@
       try {
         const p = await S.findPerson(e);
         if (!wrap.isConnected) return;
-        if (p && p.uid) { assignee = p; assignQuery = ''; assignMsg = ''; }
-        else assignMsg = 'No one has signed in to Cadence with ' + e + ' yet. Ask them to create an account with that email and verify it, then try again.';
+        if (p && p.uid) {
+          const fav = QUICK_ASSIGN.find((f) => f.email === e);
+          assignee = Object.assign({}, p, { name: p.name || (fav && fav.name) || '' });
+          if (!fromPill) assignQuery = '';
+          assignMsg = '';
+        }
+        else assignMsg = 'No one has signed in to Cadence with ' + e + ' yet. Ask them to sign in once with Google, then try again.';
       } catch (err) {
         assignMsg = 'Couldn’t look that up: ' + ((err && (err.code || err.message)) || 'unknown error') + '.';
       }
@@ -162,6 +181,13 @@
       if (b.hasAttribute('data-close')) return close();
       if (b.dataset.act !== 'handback' && confirmBack) { confirmBack = false; resetBack(); }
       if (b.dataset.assign != null) { sync(); const uid = b.dataset.assign; assignee = uid ? (S.people().concat(assignee ? [assignee] : []).find((p) => p.uid === uid) || null) : null; assignMsg = ''; render(); return; }
+      if (b.dataset.assignEmail != null) {
+        sync();
+        const em = b.dataset.assignEmail;
+        const known = S.people().concat(assignee ? [assignee] : []).find((p) => p.uid && (p.email || '').toLowerCase() === em);
+        if (known) { assignee = known; assignMsg = ''; render(); } else findAssignee(em);
+        return;
+      }
       if (b.dataset.act === 'find') { findAssignee(); return; }
       if (b.dataset.act === 'handback') {
         if (!confirmBack) { confirmBack = true; b.querySelector('span').textContent = 'Hand back to ' + C.firstName(existing.ownerName, existing.ownerEmail) + '?'; b.classList.add('danger'); return; }
