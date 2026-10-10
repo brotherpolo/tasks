@@ -119,7 +119,7 @@
         const p = await S.findPerson(e);
         if (!wrap.isConnected) return;
         if (p && p.uid) { assignee = p; assignQuery = ''; assignMsg = ''; }
-        else assignMsg = 'No one has signed in to Cadence with ' + e + ' yet. Ask them to sign in once with Google, then try again.';
+        else assignMsg = 'No one has signed in to Cadence with ' + e + ' yet. Ask them to create an account with that email and verify it, then try again.';
       } catch (err) {
         assignMsg = 'Couldn’t look that up: ' + ((err && (err.code || err.message)) || 'unknown error') + '.';
       }

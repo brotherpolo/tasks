@@ -90,7 +90,7 @@
     if (fb && fb.user) {
       const how = { 'google.com': 'Google', password: 'email + password' }[fb.user.method] || fb.user.method;
       rows.push(['Signed in as', '<span class="mono">' + esc(fb.user.email || fb.user.name || 'you') + '</span> <span class="muted">(' + esc(how) + ')</span>']);
-      rows.push(['Can receive tasks', fb.user.verified ? 'Yes, others can assign to <span class="mono">' + esc(fb.user.email || '') + '</span>' : '<span class="muted">No. Verify your email address, or sign in with Google, so others can assign you tasks.</span>']);
+      rows.push(['Can receive tasks', fb.user.verified ? 'Yes, others can assign to <span class="mono">' + esc(fb.user.email || '') + '</span>' : '<span class="muted">No. Verify your email address (sign out and back in to get a new link) so others can assign you tasks.</span>']);
       rows.push(['Account ID', '<span class="mono">' + esc(fb.user.uid.slice(0, 8)) + '</span> <span class="muted">must match on every device</span>']);
     }
     if (sy.provider) rows.push(['Last synced', esc(C.ago(sy.lastAt))]);

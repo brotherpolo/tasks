@@ -12,7 +12,9 @@
   if (!cfg.apiKey) {
     try { if (typeof firebaseConfig !== 'undefined' && firebaseConfig && firebaseConfig.apiKey) cfg = firebaseConfig; } catch (e) { /* not defined */ }
   }
-  const providers = window.CADENCE_AUTH_PROVIDERS || { google: true, emailPassword: true };
+  // Email + password is the default sign-in. Set window.CADENCE_AUTH_PROVIDERS = { google: true, emailPassword: true }
+  // in firebase-config.js to also show "Continue with Google".
+  const providers = window.CADENCE_AUTH_PROVIDERS || { google: false, emailPassword: true };
   const inArtifact = !!(window.claude && typeof window.claude.use === 'function');
   const enabled = !!(cfg.apiKey && cfg.projectId) && !inArtifact;
   const V = '10.12.2';
@@ -50,8 +52,19 @@
       db.settings(window.CADENCE_FORCE_LONG_POLLING ? { experimentalForceLongPolling: true, merge: true } : { experimentalAutoDetectLongPolling: true, merge: true });
     } catch (e) { /* settings already applied */ }
 
+    // Email/password accounts must verify their address before the app opens.
+    // A verified email is what lets other people find you and assign you tasks
+    // (firestore.rules only lets a verified address claim its directory entry).
     const user = await new Promise((resolve) => {
-      auth.onAuthStateChanged((u) => { if (u) { hideGate(); resolve(u); } else showGate(auth); });
+      let done = false;
+      const finish = (u) => { if (done) return; done = true; stopVerifyWatch(); hideGate(); resolve(u); };
+      onVerified = finish;
+      auth.onAuthStateChanged((u) => {
+        if (done) return;
+        if (!u) { stopVerifyWatch(); mode = mode === 'verify' ? 'signin' : mode; showGate(auth); return; }
+        if (needsVerify(u)) { mode = 'verify'; showGate(auth); startVerifyWatch(auth); return; }
+        finish(u);
+      });
     });
     const uid = user.uid;
     const me = { uid, name: user.displayName || '', email: (user.email || '').toLowerCase(), verified: !!user.emailVerified };
@@ -69,7 +82,7 @@
     const settingsRef = db.collection('users').doc(uid).collection('items').doc('settings');
 
     // List this person in the directory so others can assign them tasks by email.
-    // Only verified emails can claim an entry (every Google account is verified).
+    // Only verified emails can claim an entry.
     FB.listed = false;
     if (me.email && me.verified) {
       db.collection('people').doc(me.email).set({ uid, name: me.name })
@@ -141,8 +154,41 @@
     }
   }
 
+  /* ---------- email verification ---------- */
+  let onVerified = null, verifyTimer = null, verifyFocus = null;
+  const isPassword = (u) => (u.providerData || []).some((p) => p && p.providerId === 'password');
+  const needsVerify = (u) => !!(u && u.email && !u.emailVerified && isPassword(u));
+
+  // Re-read the account from Firebase; once the link has been clicked, refresh the
+  // ID token so Firestore sees email_verified = true, then open the app.
+  async function checkVerified(auth, manual) {
+    const u = auth.currentUser;
+    if (!u) return;
+    try {
+      await u.reload();
+      if (auth.currentUser && auth.currentUser.emailVerified) {
+        await auth.currentUser.getIdToken(true);
+        if (onVerified) onVerified(auth.currentUser);
+      } else if (manual) {
+        renderGate('Not verified yet. Open the link in the email we sent to ' + u.email + ', then press this button again.');
+      }
+    } catch (err) { if (manual) renderGate(msg(err)); }
+  }
+  function startVerifyWatch(auth) {
+    stopVerifyWatch();
+    // notice automatically when the person clicks the link in another tab
+    verifyTimer = setInterval(() => checkVerified(auth, false), 5000);
+    verifyFocus = () => checkVerified(auth, false);
+    window.addEventListener('focus', verifyFocus);
+  }
+  function stopVerifyWatch() {
+    if (verifyTimer) clearInterval(verifyTimer);
+    if (verifyFocus) window.removeEventListener('focus', verifyFocus);
+    verifyTimer = verifyFocus = null;
+  }
+
   /* ---------- sign-in gate ---------- */
-  let gate = null, mode = 'signin';
+  let gate = null, mode = 'signin', currentAuth = null;
   const ERR = {
     'auth/invalid-email': 'That email address doesn’t look right.',
     'auth/missing-password': 'Enter your password.',
@@ -156,11 +202,13 @@
     'auth/unauthorized-domain': 'This domain isn’t authorized. Add it in Firebase console → Authentication → Settings → Authorized domains.',
     'auth/operation-not-allowed': 'This sign-in method is turned off in the Firebase console.',
     'auth/too-many-requests': 'Too many attempts. Wait a minute and try again.',
+    'auth/user-token-expired': 'Your sign-in expired. Sign in again.',
     'auth/network-request-failed': 'Network error. Check your connection and try again.'
   };
   const msg = (e) => ERR[e && e.code] || (e && e.message) || 'Something went wrong. Try again.';
 
   function showGate(auth) {
+    currentAuth = auth;
     if (!gate) {
       gate = document.createElement('div');
       gate.className = 'gate';
@@ -173,11 +221,12 @@
   function hideGate() { if (gate) { gate.remove(); gate = null; } }
 
   function renderGate(error, note) {
+    if (mode === 'verify') return renderVerify(error, note);
     const up = mode === 'signup';
     gate.innerHTML = '<div class="gate-card" role="dialog" aria-modal="true" aria-labelledby="gate-title">' +
       '<div class="brand"><svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect x="2" y="2" width="28" height="28" rx="9" class="logo-bg"/><rect x="8.5" y="16" width="3.6" height="8" rx="1.8" class="logo-bar"/><rect x="14.2" y="11" width="3.6" height="13" rx="1.8" class="logo-bar"/><rect x="19.9" y="7.5" width="3.6" height="16.5" rx="1.8" class="logo-bar hi"/></svg><span class="brand-name">Cadence</span></div>' +
       '<h1 id="gate-title" class="gate-title">' + (up ? 'Create your account' : 'Sign in to your tasks') + '</h1>' +
-      '<p class="muted gate-sub">Your tasks sync across your devices. Only you and the people you share a task with can see it.</p>' +
+      '<p class="muted gate-sub">' + (up ? 'We’ll email you a link to confirm your address. ' : '') + 'Your tasks sync across your devices. Only you and the people you share a task with can see it.</p>' +
       (providers.google ? '<button type="button" class="btn block gate-google" data-g>' + icon('sparkle') + '<span>Continue with Google</span></button>' : '') +
       (providers.google && providers.emailPassword ? '<div class="gate-or"><span>or</span></div>' : '') +
       (providers.emailPassword ? '<form class="gate-form" novalidate>' +
@@ -191,6 +240,21 @@
         '</form>' : (error ? '<p class="gate-err" role="alert">' + esc(error) + '</p>' : '')) +
       '</div>';
   }
+  function renderVerify(error, note) {
+    const u = currentAuth && currentAuth.currentUser;
+    const email = (u && u.email) || 'your email';
+    gate.innerHTML = '<div class="gate-card" role="dialog" aria-modal="true" aria-labelledby="gate-title">' +
+      '<div class="brand"><svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect x="2" y="2" width="28" height="28" rx="9" class="logo-bg"/><rect x="8.5" y="16" width="3.6" height="8" rx="1.8" class="logo-bar"/><rect x="14.2" y="11" width="3.6" height="13" rx="1.8" class="logo-bar"/><rect x="19.9" y="7.5" width="3.6" height="16.5" rx="1.8" class="logo-bar hi"/></svg><span class="brand-name">Cadence</span></div>' +
+      '<h1 id="gate-title" class="gate-title">Verify your email</h1>' +
+      '<p class="muted gate-sub">We sent a link to <b>' + esc(email) + '</b>. Open it to confirm the address is yours. That lets other people assign you tasks. Check your spam folder if it doesn’t arrive.</p>' +
+      (error ? '<p class="gate-err" role="alert">' + esc(error) + '</p>' : '') + (note ? '<p class="gate-note" role="status">' + esc(note) + '</p>' : '') +
+      '<button type="button" class="btn primary block gate-submit" data-vcheck>I’ve verified my email</button>' +
+      '<div class="gate-links">' +
+      '<button type="button" class="gate-link" data-vsend>Send the link again</button>' +
+      '<button type="button" class="gate-link" data-vout>Use a different account</button></div>' +
+      '</div>';
+  }
+
   async function onSubmit(e, auth) {
     e.preventDefault();
     const email = gate.querySelector('#gate-email').value.trim();
@@ -198,11 +262,23 @@
     const btn = gate.querySelector('.gate-submit');
     btn.disabled = true; btn.textContent = mode === 'signup' ? 'Creating account…' : 'Signing in…';
     try {
-      if (mode === 'signup') await auth.createUserWithEmailAndPassword(email, pass);
-      else await auth.signInWithEmailAndPassword(email, pass);
+      if (mode === 'signup') {
+        const cred = await auth.createUserWithEmailAndPassword(email, pass);
+        try { await cred.user.sendEmailVerification(); } catch (err) { console.warn('Could not send verification email:', err); }
+      } else await auth.signInWithEmailAndPassword(email, pass);
     } catch (err) { renderGate(msg(err)); const em = gate.querySelector('#gate-email'); if (em) em.value = email; }
   }
   async function onClick(e, auth) {
+    if (e.target.closest('[data-vcheck]')) {
+      const b = e.target.closest('[data-vcheck]'); b.disabled = true; b.textContent = 'Checking…';
+      return checkVerified(auth, true);
+    }
+    if (e.target.closest('[data-vsend]')) {
+      try { await auth.currentUser.sendEmailVerification(); renderGate(null, 'Sent. Check ' + auth.currentUser.email + '.'); }
+      catch (err) { renderGate(msg(err)); }
+      return;
+    }
+    if (e.target.closest('[data-vout]')) { mode = 'signin'; stopVerifyWatch(); return auth.signOut(); }
     if (e.target.closest('[data-g]')) {
       try { await auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()); }
       catch (err) {

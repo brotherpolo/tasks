@@ -13,8 +13,8 @@ rules_version = '2';
 //   - The assignee can complete it, change its date and time, edit the
 //     checklist and notes, or hand it back to the owner. Nothing else.
 //   - The people directory can be looked up one exact email at a time but
-//     never listed, and only verified emails (all Google sign-ins) can claim
-//     an entry.
+//     never listed, and only verified emails can claim an entry. Email/password
+//     accounts verify through the link the app emails at sign-up.
 //   - Everything else is denied. Writes are shape-checked.
 
 service cloud.firestore {

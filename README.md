@@ -4,7 +4,7 @@ A build-free task app: plain HTML, CSS and JavaScript files. No bundler, no npm 
 
 - **Tasks**: natural-language quick add, inventory summary, filters, grouping, agenda and table layouts, swipe gestures on phones
 - **Calendar**: month and week views; drag tasks between days or onto "Unscheduled"
-- **Sharing**: assign a task to anyone who has signed in with Google; they see it in their own list
+- **Sharing**: assign a task to anyone with a verified Cadence account; they see it in their own list
 - **Settings**: task types (name, color, icon, order), importance levels (name, color, rank, default), theme, week start, backup and restore
 
 ## Run it
@@ -34,7 +34,7 @@ With no Firebase config, tasks are saved in that browser's local storage.
 ## Turn on sign-in and sync (Firebase)
 
 1. Create a project at <https://console.firebase.google.com>.
-2. **Authentication → Sign-in method**: enable **Google** and/or **Email/Password**.
+2. **Authentication → Sign-in method**: enable **Email/Password**. (Google is optional; to show its button, add `window.CADENCE_AUTH_PROVIDERS = { google: true, emailPassword: true };` to `firebase-config.js`.)
 3. **Firestore Database → Create database** (production mode).
 4. **Project settings → Your apps → Web app (`</>`)**: register an app and copy its config object into `firebase-config.js`.
 5. **Authentication → Settings → Authorized domains**: add the domain you'll host on (`localhost` is there by default).
@@ -62,7 +62,8 @@ people/{email}               { uid, name }, so others can assign you tasks by em
 
 In the task editor, **Assigned to** shows "Me", the people you've worked with recently, and an email box. Type someone's email and press **Assign**.
 
-- The person must have signed in to Cadence once. Signing in lists their email in the `people` directory. Directory entries can be looked up one exact email at a time, never listed, and only verified addresses can claim one. Every Google account is verified; email/password users need to verify their address first.
+- The person must have created a Cadence account and verified their email. When someone creates an account, the app emails them a confirmation link and waits on a "Verify your email" screen until they click it (it notices automatically, or they can press **I've verified my email**). Verifying lists their email in the `people` directory. Directory entries can be looked up one exact email at a time, never listed, and only verified addresses can claim one, so nobody can claim an address they don't own.
+- Accounts created before version 9 that never verified see the same screen on their next sign-in and can choose **Send the link again**.
 - **The owner** can change anything, reassign, or delete.
 - **The assignee** can complete the task, change its date and time, and edit the checklist and notes. Title, type, importance and repeat are read-only for them. They can't delete it, but they can **Hand back** the task to the owner.
 - The assignee sees the owner's type and importance names and colors, even if their own settings differ.
@@ -105,4 +106,4 @@ Scripts load in the order listed in `index.html`; keep that order if you add fil
 
 **Don't overwrite your `firebase-config.js`.** Update zips from here leave it out, so your filled-in copy on GitHub stays as it is.
 
-`index.html` loads every file with a version tag (`app.js?v=8`). When you change any file, bump the number in `index.html` (and `C.VERSION` in `utils.js`) so browsers fetch the new copies instead of cached ones. Settings → Your data shows the version each device is running.
+`index.html` loads every file with a version tag (`app.js?v=9`). When you change any file, bump the number in `index.html` (and `C.VERSION` in `utils.js`) so browsers fetch the new copies instead of cached ones. Settings → Your data shows the version each device is running.
