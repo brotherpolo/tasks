@@ -75,7 +75,10 @@
   function syncCard(st) {
     const sy = st.sync, fb = C.firebaseSync;
     const head = {
-      local: ['Saved in this browser', fb && fb.enabled ? 'Not connected to your account. Press Retry to connect.' : 'Tasks stay on this device. Export a backup to move them somewhere else.'],
+      local: fb && fb.enabled ? ['Saved in this browser', 'Not connected to your account. Press Retry to connect.']
+        : fb && fb.reason === 'no-config' ? ['Sync is off: Firebase isn’t configured', 'firebase-config.js has an empty apiKey or projectId, so sign-in and sync are turned off. Paste your web app config from Firebase console → Project settings → Your apps into firebase-config.js and upload it.']
+        : fb && fb.reason === 'no-file' ? ['Sync is off: firebase-config.js didn’t load', 'The page couldn’t find firebase-config.js next to index.html. Upload it to the same folder.']
+        : ['Saved in this browser', 'Tasks stay on this device. Export a backup to move them somewhere else.'],
       connecting: ['Connecting…', 'Reaching your account.'],
       synced: ['Synced to your account', 'Your tasks follow you to every device you sign in on. Only you can see them.'],
       saving: ['Saving changes…', sy.pending + ' change' + (sy.pending === 1 ? '' : 's') + ' on the way.'],
@@ -94,7 +97,8 @@
     if (sy.provider) rows.push(['In the cloud', sy.cloudCount == null ? '<span class="muted">not reached yet</span>' : '<span class="mono">' + sy.cloudCount + '</span> tasks']);
     rows.push(['App version', '<span class="mono">' + esc(C.VERSION || '?') + '</span>']);
     const err = sy.status === 'error' && sy.error;
-    return '<div class="sync-card s-' + sy.status + '" id="st-sync">' +
+    const off = sy.status === 'local' && fb && (fb.reason === 'no-config' || fb.reason === 'no-file');
+    return '<div class="sync-card s-' + sy.status + (off ? ' s-error' : '') + '" id="st-sync">' +
       '<div class="sync-top">' + C.syncPill() + '<span class="spacer"></span>' +
       (sy.provider || (fb && fb.enabled) ? '<button type="button" class="btn sm" data-act="retry"' + (sy.status === 'connecting' ? ' disabled' : '') + '>' + icon('repeat') + '<span>Retry sync</span></button>' : '') +
       (fb && fb.user ? '<button type="button" class="btn sm ghost" data-act="signout">Sign out</button>' : '') + '</div>' +

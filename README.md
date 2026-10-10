@@ -89,4 +89,6 @@ Scripts load in the order listed in `index.html`; keep that order if you add fil
 
 ## Updating the app
 
-`index.html` loads every file with a version tag (`app.js?v=6`). When you change any file, bump the number in `index.html` (and `C.VERSION` in `utils.js`) so browsers fetch the new copies instead of cached ones. Settings → Your data shows the version each device is running.
+**Don't overwrite your `firebase-config.js`.** Update zips from here leave it out, so your filled-in copy on GitHub stays as it is.
+
+`index.html` loads every file with a version tag (`app.js?v=7`). When you change any file, bump the number in `index.html` (and `C.VERSION` in `utils.js`) so browsers fetch the new copies instead of cached ones. Settings → Your data shows the version each device is running.

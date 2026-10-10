@@ -6,14 +6,23 @@
 (function () {
   const C = window.Cadence;
   const { esc, icon } = C;
-  const cfg = window.CADENCE_FIREBASE_CONFIG || {};
+  // Accept the config as window.CADENCE_FIREBASE_CONFIG, or as the
+  // `const firebaseConfig = {...}` snippet pasted straight from the Firebase console.
+  let cfg = window.CADENCE_FIREBASE_CONFIG || {};
+  if (!cfg.apiKey) {
+    try { if (typeof firebaseConfig !== 'undefined' && firebaseConfig && firebaseConfig.apiKey) cfg = firebaseConfig; } catch (e) { /* not defined */ }
+  }
   const providers = window.CADENCE_AUTH_PROVIDERS || { google: true, emailPassword: true };
   const inArtifact = !!(window.claude && typeof window.claude.use === 'function');
   const enabled = !!(cfg.apiKey && cfg.projectId) && !inArtifact;
   const V = '10.12.2';
   const SDK = 'https://www.gstatic.com/firebasejs/' + V + '/';
 
-  const FB = { enabled, user: null, signOut: null, projectId: cfg.projectId || null };
+  const FB = {
+    enabled, user: null, signOut: null, projectId: cfg.projectId || null,
+    // why sync is off, for the Settings card
+    reason: enabled ? null : inArtifact ? 'artifact' : (window.CADENCE_FIREBASE_CONFIG === undefined && !cfg.apiKey) ? 'no-file' : 'no-config'
+  };
   C.firebaseSync = FB;
   if (!enabled) return;
 
