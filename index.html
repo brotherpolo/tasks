@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Cadence</title>
+<meta name="theme-color" content="#F4F6FA">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Geist:wght@400..700&family=Geist+Mono:wght@400..600&display=swap">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar" id="sidebar"></aside>
+  <header class="topbar" id="topbar"></header>
+  <main class="main" id="view" tabindex="-1"></main>
+  <nav class="tabbar" id="tabbar" aria-label="Primary"></nav>
+</div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<div id="overlay-root"></div>
+
+<script src="icons.js"></script>
+<script src="utils.js"></script>
+<script src="store.js"></script>
+<script src="toast.js"></script>
+<script src="drag.js"></script>
+<script src="editor.js"></script>
+<script src="palette.js"></script>
+<script src="firebase-config.js"></script>
+<script src="firebase-sync.js"></script>
+<script src="list.js"></script>
+<script src="calendar.js"></script>
+<script src="settings.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

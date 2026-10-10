@@ -1,0 +1,86 @@
+rules_version = '2';
+
+// Cadence — Cloud Firestore security rules
+//
+// Data layout written by firebase-sync.js:
+//   users/{uid}/items/settings   task types, importance levels, defaults
+//   users/{uid}/items/{taskId}   one document per task
+//
+// Policy: a signed-in user can read and write ONLY their own items.
+// Everything else is denied. Writes are shape-checked so a buggy or
+// malicious client can't store junk or oversized documents.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+      // To require verified email addresses, use this instead:
+      // return signedIn() && request.auth.uid == uid
+      //   && (request.auth.token.email_verified == true
+      //       || request.auth.token.firebase.sign_in_provider == 'google.com');
+    }
+
+    function optString(d, key, max) {
+      return !(key in d) || d[key] == null || (d[key] is string && d[key].size() <= max);
+    }
+
+    function isDateKey(v) {
+      return v == null || (v is string && v.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'));
+    }
+
+    function isTimeKey(v) {
+      return v == null || (v is string && v.matches('^[0-9]{2}:[0-9]{2}$'));
+    }
+
+    function validTask(d, taskId) {
+      return d.keys().hasOnly([
+               'id', 'title', 'notes', 'typeId', 'levelId', 'due', 'time',
+               'done', 'doneAt', 'createdAt', 'updatedAt', 'subtasks',
+               'repeat', 'sample', 'spawnedNext'
+             ])
+          && d.keys().hasAll(['id', 'title', 'done'])
+          && d.id == taskId
+          && d.title is string && d.title.size() > 0 && d.title.size() <= 500
+          && d.done is bool
+          && optString(d, 'notes', 20000)
+          && optString(d, 'typeId', 100)
+          && optString(d, 'levelId', 100)
+          && optString(d, 'spawnedNext', 100)
+          && isDateKey(d.get('due', null))
+          && isTimeKey(d.get('time', null))
+          && (!('repeat' in d) || d.repeat in ['none', 'daily', 'weekdays', 'weekly', 'monthly'])
+          && (!('subtasks' in d) || (d.subtasks is list && d.subtasks.size() <= 200))
+          && (!('sample' in d) || d.sample is bool)
+          && (!('createdAt' in d) || d.createdAt is number)
+          && (!('updatedAt' in d) || d.updatedAt is number)
+          && (!('doneAt' in d) || d.doneAt == null || d.doneAt is number);
+    }
+
+    function validSettings(d) {
+      return d.keys().hasOnly(['kind', 'types', 'levels', 'defaultLevel', 'defaultType'])
+          && d.kind == 'settings'
+          && d.types is list && d.types.size() <= 50
+          && d.levels is list && d.levels.size() >= 1 && d.levels.size() <= 20
+          && optString(d, 'defaultLevel', 100)
+          && optString(d, 'defaultType', 100);
+    }
+
+    match /users/{uid}/items/{itemId} {
+      allow read, delete: if isOwner(uid);
+      allow create, update: if isOwner(uid)
+        && (itemId == 'settings'
+              ? validSettings(request.resource.data)
+              : validTask(request.resource.data, itemId));
+    }
+
+    // Default deny for every other path.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
