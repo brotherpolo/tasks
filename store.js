@@ -28,7 +28,7 @@
   const state = {
     tasks: [], types: [], levels: [], prefs: { ...DEFAULT_PREFS },
     mode: 'local', // 'local' | 'sync'
-    sync: { status: 'local', provider: null, lastAt: null, pending: 0, error: null },
+    sync: { status: 'local', provider: null, lastAt: null, pending: 0, error: null, cloudCount: null },
     ready: false
   };
   const listeners = new Set();
@@ -152,7 +152,10 @@
     // keep local tasks whose create hasn't landed yet (or was refused, so nothing is lost)
     state.tasks.forEach((t) => { if (!seen.has(t.id) && (pending(t.id) || failed.has(t.id))) tasks.push(t); });
     state.tasks = tasks;
-    if (snap.metadata && !snap.metadata.fromCache) state.sync.lastAt = Date.now();
+    if (snap.metadata && !snap.metadata.fromCache) {
+      state.sync.lastAt = Date.now();
+      state.sync.cloudCount = snap.docs.filter((d) => d.id !== 'settings').length;
+    }
     writeLocal();
     refreshStatus();
     emit();
@@ -206,7 +209,7 @@
           state.syncLabel = p.label;
           state.owner = p.uid;
           const wasLate = settled; // answered after the timeout: push what we have
-          if (snap.empty) { if (wasLate) pushAll(); refreshStatus(); return done({ status: 'remote-empty', uid: p.uid }); }
+          if (snap.empty) { state.sync.cloudCount = 0; if (wasLate) pushAll(); refreshStatus(); return done({ status: 'remote-empty', uid: p.uid }); }
           applySnapshot(snap);
           if (wasLate) pushAll();
           return done({ status: 'remote-data', uid: p.uid });

@@ -84,9 +84,15 @@
     }[sy.status] || ['Saved in this browser', ''];
     const rows = [];
     if (sy.provider) rows.push(['Service', sy.provider === 'firebase' ? 'Firebase' + (fb && fb.projectId ? ' · <span class="mono">' + esc(fb.projectId) + '</span>' : '') : 'Claude account']);
-    if (fb && fb.user) rows.push(['Signed in as', '<span class="mono">' + esc(fb.user.email || fb.user.name || 'you') + '</span>']);
+    if (fb && fb.user) {
+      const how = { 'google.com': 'Google', password: 'email + password' }[fb.user.method] || fb.user.method;
+      rows.push(['Signed in as', '<span class="mono">' + esc(fb.user.email || fb.user.name || 'you') + '</span> <span class="muted">(' + esc(how) + ')</span>']);
+      rows.push(['Account ID', '<span class="mono">' + esc(fb.user.uid.slice(0, 8)) + '</span> <span class="muted">must match on every device</span>']);
+    }
     if (sy.provider) rows.push(['Last synced', esc(C.ago(sy.lastAt))]);
-    rows.push(['Tasks', '<span class="mono">' + st.tasks.length + '</span>']);
+    rows.push(['On this device', '<span class="mono">' + st.tasks.length + '</span> tasks']);
+    if (sy.provider) rows.push(['In the cloud', sy.cloudCount == null ? '<span class="muted">not reached yet</span>' : '<span class="mono">' + sy.cloudCount + '</span> tasks']);
+    rows.push(['App version', '<span class="mono">' + esc(C.VERSION || '?') + '</span>']);
     const err = sy.status === 'error' && sy.error;
     return '<div class="sync-card s-' + sy.status + '" id="st-sync">' +
       '<div class="sync-top">' + C.syncPill() + '<span class="spacer"></span>' +

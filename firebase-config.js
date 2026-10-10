@@ -16,3 +16,7 @@ window.CADENCE_FIREBASE_CONFIG = {
 /* Sign-in methods shown on the sign-in screen. Enable the same ones in
    Firebase console → Authentication → Sign-in method. */
 window.CADENCE_AUTH_PROVIDERS = { google: true, emailPassword: true };
+
+/* Set to true if sync stays on "Connecting…" or times out on some networks
+   (corporate proxies, VPNs, some antivirus or privacy tools). */
+window.CADENCE_FORCE_LONG_POLLING = false;

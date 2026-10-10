@@ -35,11 +35,16 @@
     const app = firebase.apps.length ? firebase.app() : firebase.initializeApp(cfg);
     const auth = app.auth();
     const db = app.firestore();
+    // Some networks, proxies, VPNs and privacy tools break Firestore's streaming
+    // connection, so listeners never hear back. Long polling works around that.
+    try {
+      db.settings(window.CADENCE_FORCE_LONG_POLLING ? { experimentalForceLongPolling: true, merge: true } : { experimentalAutoDetectLongPolling: true, merge: true });
+    } catch (e) { /* settings already applied */ }
 
     const user = await new Promise((resolve) => {
       auth.onAuthStateChanged((u) => { if (u) { hideGate(); resolve(u); } else showGate(auth); });
     });
-    FB.user = { uid: user.uid, email: user.email, name: user.displayName };
+    FB.user = { uid: user.uid, email: user.email, name: user.displayName, method: ((user.providerData || [])[0] || {}).providerId || 'unknown' };
     FB.signOut = async () => {
       await auth.signOut();
       try { localStorage.removeItem('cadence.v1'); } catch (e) { /* blocked */ }
