@@ -53,7 +53,10 @@
     const user = await new Promise((resolve) => {
       auth.onAuthStateChanged((u) => { if (u) { hideGate(); resolve(u); } else showGate(auth); });
     });
-    FB.user = { uid: user.uid, email: user.email, name: user.displayName, method: ((user.providerData || [])[0] || {}).providerId || 'unknown' };
+    const uid = user.uid;
+    const me = { uid, name: user.displayName || '', email: (user.email || '').toLowerCase(), verified: !!user.emailVerified };
+    FB.user = { uid, email: user.email, name: user.displayName, method: ((user.providerData || [])[0] || {}).providerId || 'unknown', verified: me.verified };
+    FB.me = me;
     FB.signOut = async () => {
       await auth.signOut();
       try { localStorage.removeItem('cadence.v1'); } catch (e) { /* blocked */ }
@@ -62,12 +65,81 @@
     // after sign-in, a later sign-out (e.g. from another tab) returns to the gate
     auth.onAuthStateChanged((u) => { if (!u && FB.user) location.reload(); });
 
-    const col = db.collection('users').doc(user.uid).collection('items');
-    return {
-      col, uid: user.uid, label: 'firebase',
-      listen: (next, err) => col.onSnapshot({ includeMetadataChanges: true }, next, err)
+    const tasksCol = db.collection('tasks');
+    const settingsRef = db.collection('users').doc(uid).collection('items').doc('settings');
+
+    // List this person in the directory so others can assign them tasks by email.
+    // Only verified emails can claim an entry (every Google account is verified).
+    FB.listed = false;
+    if (me.email && me.verified) {
+      db.collection('people').doc(me.email).set({ uid, name: me.name })
+        .then(() => { FB.listed = true; })
+        .catch((e) => console.warn('Could not publish directory entry:', e));
     }
-  };
+    FB.findPerson = async (email) => {
+      email = String(email || '').trim().toLowerCase();
+      if (!email) return null;
+      const snap = await db.collection('people').doc(email).get();
+      if (!snap.exists) return null;
+      const d = snap.data() || {};
+      return { uid: d.uid, name: d.name || '', email };
+    };
+
+    await migrate(db, uid, me);
+
+    return {
+      uid, me, label: 'firebase',
+      // settings stay private; every task lives in the shared /tasks collection
+      col: { doc: (id) => (id === 'settings' ? settingsRef : tasksCol.doc(id)) },
+      // fill in ownership on tasks created before sign-in or by older versions
+      prepare(body) {
+        if (!body.ownerId) { body.ownerId = uid; body.ownerName = me.name || null; body.ownerEmail = me.email || null; }
+        if (!('assigneeId' in body)) body.assigneeId = null;
+        if (!Array.isArray(body.members)) body.members = body.assigneeId ? [body.ownerId, body.assigneeId] : [body.ownerId];
+        return body;
+      },
+      // one combined stream: the private settings doc + every task this person is a member of
+      listen(next, err) {
+        let s = null, t = null, dead = false, u1 = null, u2 = null;
+        const stop = () => { if (u1) u1(); if (u2) u2(); };
+        const fire = () => {
+          if (dead || !s || !t) return;
+          const docs = [];
+          if (s.exists) docs.push({ id: 'settings', data: () => s.data() });
+          t.docs.forEach((d) => docs.push(d));
+          next({ docs, empty: !docs.length, metadata: { fromCache: s.metadata.fromCache || t.metadata.fromCache } });
+        };
+        const fail = (e) => { if (dead) return; dead = true; stop(); err(e); };
+        u1 = settingsRef.onSnapshot({ includeMetadataChanges: true }, (x) => { s = x; fire(); }, fail);
+        u2 = tasksCol.where('members', 'array-contains', uid).onSnapshot({ includeMetadataChanges: true }, (x) => { t = x; fire(); }, fail);
+        return () => { dead = true; stop(); };
+      }
+    };
+  }
+
+  /* Version 7 and earlier kept tasks in users/{uid}/items/{taskId}.
+     Move them to /tasks with ownership fields, then remove the old copies. */
+  async function migrate(db, uid, me) {
+    const legacy = db.collection('users').doc(uid).collection('items');
+    let snap;
+    try { snap = await legacy.get(); } catch (e) { console.warn('Could not check for tasks to move:', e); return; }
+    const docs = snap.docs.filter((d) => d.id !== 'settings');
+    for (let i = 0; i < docs.length; i += 200) {
+      const b = db.batch();
+      docs.slice(i, i + 200).forEach((d) => {
+        const body = Object.assign({}, d.data(), {
+          id: d.id, ownerId: uid, ownerName: me.name || null, ownerEmail: me.email || null,
+          assigneeId: null, members: [uid]
+        });
+        b.set(db.collection('tasks').doc(d.id), body);
+        b.delete(d.ref);
+      });
+      try { await b.commit(); }
+      catch (e) {
+        throw new Error('Couldn’t move your tasks to the new shared storage (' + (e.code || e.message) + '). Deploy the updated firestore.rules (firebase deploy --only firestore:rules), then press Retry. Your tasks are safe on this device and in the old location.');
+      }
+    }
+  }
 
   /* ---------- sign-in gate ---------- */
   let gate = null, mode = 'signin';
@@ -105,7 +177,7 @@
     gate.innerHTML = '<div class="gate-card" role="dialog" aria-modal="true" aria-labelledby="gate-title">' +
       '<div class="brand"><svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect x="2" y="2" width="28" height="28" rx="9" class="logo-bg"/><rect x="8.5" y="16" width="3.6" height="8" rx="1.8" class="logo-bar"/><rect x="14.2" y="11" width="3.6" height="13" rx="1.8" class="logo-bar"/><rect x="19.9" y="7.5" width="3.6" height="16.5" rx="1.8" class="logo-bar hi"/></svg><span class="brand-name">Cadence</span></div>' +
       '<h1 id="gate-title" class="gate-title">' + (up ? 'Create your account' : 'Sign in to your tasks') + '</h1>' +
-      '<p class="muted gate-sub">Your tasks sync across your devices. Only you can read them.</p>' +
+      '<p class="muted gate-sub">Your tasks sync across your devices. Only you and the people you share a task with can see it.</p>' +
       (providers.google ? '<button type="button" class="btn block gate-google" data-g>' + icon('sparkle') + '<span>Continue with Google</span></button>' : '') +
       (providers.google && providers.emailPassword ? '<div class="gate-or"><span>or</span></div>' : '') +
       (providers.emailPassword ? '<form class="gate-form" novalidate>' +

@@ -42,8 +42,8 @@
         .sort((a, b) => (a.done - b.done) || ((a.due || '9') < (b.due || '9') ? -1 : 1))
         .slice(0, lv ? 12 : 6);
       tasks.forEach((t) => {
-        const ty = S.typeById(t.typeId);
-        items.push({ label: t.title, sub: [C.relDate(t.due), ty && ty.name, t.done && 'Done'].filter(Boolean).join(' · '), ic: ty ? ty.glyph : 'inbox', color: ty && ty.color, task: true, run: () => C.openEditor(t.id) });
+        const ty = S.typeOf(t);
+        items.push({ label: t.title, sub: [C.relDate(t.due), ty && ty.name, S.isAssignedToMe(t) && 'From ' + C.firstName(t.ownerName, t.ownerEmail), t.done && 'Done'].filter(Boolean).join(' · '), ic: ty ? ty.glyph : 'inbox', color: ty && ty.color, task: true, run: () => C.openEditor(t.id) });
       });
       sel = Math.min(sel, Math.max(0, items.length - 1));
       list.innerHTML = items.length ? items.map((it, i) =>

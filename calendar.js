@@ -120,8 +120,8 @@
       '</section>';
   }
 
-  const color = (t) => { const ty = S().typeById(t.typeId); return ty ? ty.color : 'var(--ink-3)'; };
-  const lvColor = (t) => { const l = S().levelById(t.levelId); return l ? l.color : 'var(--ink-3)'; };
+  const color = (t) => { const ty = S().typeOf(t); return ty ? ty.color : 'var(--ink-3)'; };
+  const lvColor = (t) => { const l = S().levelOf(t); return l ? l.color : 'var(--ink-3)'; };
 
   function pill(t) {
     return '<div class="pill' + (t.done ? ' done' : '') + '" data-drag-task="' + t.id + '" data-open="' + t.id + '" tabindex="0" role="button" style="--c:' + color(t) + ';--lv:' + lvColor(t) + '" title="' + esc(t.title) + '">' +
@@ -130,12 +130,12 @@
   }
 
   function card(t, handle) {
-    const ty = S().typeById(t.typeId), lv = S().levelById(t.levelId);
+    const ty = S().typeOf(t), lv = S().levelOf(t);
     return '<div class="ccard' + (t.done ? ' done' : '') + '" data-drag-task="' + t.id + '" data-open="' + t.id + '" tabindex="0" role="button" style="--c:' + color(t) + ';--lv:' + lvColor(t) + '">' +
       (handle ? '<span class="grip" data-drag-handle aria-hidden="true">' + icon('grip') + '</span>' : '') +
       '<button type="button" class="check sm" data-ccheck="' + t.id + '" aria-pressed="' + !!t.done + '" aria-label="Toggle done">' + icon('check') + '</button>' +
       '<div class="ccard-main"><span class="ccard-title">' + esc(t.title) + '</span>' +
-      '<span class="ccard-meta">' + (t.time ? '<span class="mono">' + C.fmtTime(t.time) + '</span>' : '') +
+      '<span class="ccard-meta">' + C.whoChip(t, true) + (t.time ? '<span class="mono">' + C.fmtTime(t.time) + '</span>' : '') +
       (ty ? '<span class="type-tag" style="--c:' + ty.color + '">' + icon(ty.glyph) + esc(ty.name) + '</span>' : '') +
       (lv ? '<span class="lv-dot" title="' + esc(lv.name) + '"></span>' : '') + '</span></div></div>';
   }

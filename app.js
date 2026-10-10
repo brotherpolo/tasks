@@ -60,8 +60,36 @@
   };
 
   C.deleteWithUndo = function (id) {
+    const cur = S.get(id);
+    if (cur && !S.canDelete(cur)) {
+      return C.toast('Only ' + C.firstName(cur.ownerName, cur.ownerEmail) + ' can delete this. Hand it back if it isn’t yours to do.', { action: 'Hand back', onAction: () => C.handBack(id) });
+    }
     const t = S.deleteTask(id);
     if (t) C.toast('Deleted “' + t.title + '”', { action: 'Undo', onAction: () => S.restoreTask(t) });
+  };
+
+  /* ---------- people ---------- */
+  C.firstName = (name, email) => (name || (email || '').split('@')[0] || 'Someone').split(' ')[0];
+  C.avatar = function (p) {
+    const label = p.name || p.email || '?';
+    const parts = label.replace(/@.*/, '').split(/[\s._-]+/).filter(Boolean);
+    const ini = ((parts[0] || '?')[0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
+    let h = 0; String(p.uid || label).split('').forEach((c) => { h = (h * 31 + c.charCodeAt(0)) % 360; });
+    return '<span class="av" style="--h:' + h + '" title="' + esc(p.name || p.email || '') + '" aria-hidden="true">' + esc(ini) + '</span>';
+  };
+  /** "From Sam" on tasks assigned to me, "For Priya" on tasks I assigned */
+  C.whoChip = function (t, compact) {
+    if (!t.assigneeId || !S.sharing()) return '';
+    let p, label;
+    if (S.isAssignedToMe(t)) { p = { uid: t.ownerId, name: t.ownerName, email: t.ownerEmail }; label = 'From ' + C.firstName(p.name, p.email); }
+    else if (S.isOwner(t)) { p = { uid: t.assigneeId, name: t.assigneeName, email: t.assigneeEmail }; label = 'For ' + C.firstName(p.name, p.email); }
+    else return '';
+    return '<span class="who' + (compact ? ' compact' : '') + '" title="' + esc(label) + '">' + C.avatar(p) + (compact ? '<span class="sr">' + esc(label) + '</span>' : '<span>' + esc(label) + '</span>') + '</span>';
+  };
+  C.handBack = function (id) {
+    const t = S.get(id); if (!t) return;
+    S.returnToOwner(id);
+    C.toast('Handed “' + t.title + '” back to ' + C.firstName(t.ownerName, t.ownerEmail));
   };
 
   /* ---------- theme ---------- */

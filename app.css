@@ -753,3 +753,34 @@ button.mix-key:hover { color: var(--ink); }
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
 .sheet-open body { overflow: hidden; }
+
+/* ---------- sharing: avatars, assignment ---------- */
+.av {
+  flex: none; display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%;
+  font-size: 9.5px; font-weight: 700; letter-spacing: .02em; line-height: 1;
+  background: oklch(0.86 0.07 var(--h)); color: oklch(0.32 0.08 var(--h));
+}
+:root[data-theme="dark"] .av { background: oklch(0.38 0.08 var(--h)); color: oklch(0.92 0.05 var(--h)); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .av { background: oklch(0.38 0.08 var(--h)); color: oklch(0.92 0.05 var(--h)); } }
+.who { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--ink-2); white-space: nowrap; }
+.who .av { width: 18px; height: 18px; font-size: 9px; }
+.who.compact { vertical-align: middle; }
+.c-title .who.compact { margin-left: 8px; }
+.ccard-meta .who .av { width: 16px; height: 16px; font-size: 8px; }
+.chip .av { margin-left: -5px; }
+.chip.static { cursor: default; }
+.chip.static:active { transform: none; }
+.chip.scope .mono { font-size: 11px; }
+
+.ed-from {
+  display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: var(--r-md);
+  background: var(--surface-2); font-size: var(--fs-sm); color: var(--ink-2);
+}
+.ed-from .av { width: 26px; height: 26px; font-size: 11px; margin-top: 1px; }
+.ed-from p { margin: 0; line-height: 1.45; }
+.ed-from b { color: var(--ink); font-weight: 650; }
+.ed-title[readonly] { cursor: default; }
+.assign-find { display: flex; gap: 8px; }
+.assign-find .input-wrap { flex: 1; }
+.assign-find .btn { height: 40px; flex: none; }
+.field-msg { margin: 0; font-size: var(--fs-sm); color: var(--ink-2); }

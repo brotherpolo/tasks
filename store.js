@@ -28,6 +28,10 @@
   const state = {
     tasks: [], types: [], levels: [], prefs: { ...DEFAULT_PREFS },
     mode: 'local', // 'local' | 'sync'
+    owner: null,   // signed-in uid
+    me: null,      // { uid, name, email } when sharing is available
+    sharing: false,
+    seen: [],      // ids of tasks assigned to me that I've been told about
     sync: { status: 'local', provider: null, lastAt: null, pending: 0, error: null, cloudCount: null },
     ready: false
   };
@@ -40,14 +44,14 @@
   }
   const writeLocal = C.debounce(() => {
     try {
-      localStorage.setItem(LS_KEY, JSON.stringify({ owner: state.owner || null, tasks: state.tasks, types: state.types, levels: state.levels, prefs: state.prefs }));
+      localStorage.setItem(LS_KEY, JSON.stringify({ owner: state.owner || null, me: state.me || null, seen: state.seen, tasks: state.tasks, types: state.types, levels: state.levels, prefs: state.prefs }));
     } catch (e) { /* storage blocked: in-memory only */ }
   }, 120);
 
   /* ---------- remote sync (Firebase or claude.ai db) ----------
      state.sync = { status, provider, lastAt, pending, error }
        status: 'local' | 'connecting' | 'synced' | 'saving' | 'offline' | 'error'          */
-  let remote = null; // { col }
+  let remote = null; // { col, prepare }
   let conn = null;   // the provider result, kept so Retry can re-listen
   let unlisten = null;
   const queues = {};
@@ -105,7 +109,7 @@
       for (let attempt = 0; attempt < 2; attempt++) {
         try {
           const ref = remote.col.doc(id);
-          if (body) await ref.set(C.clone(body)); else await ref.delete();
+          if (body) await ref.set(id === 'settings' ? C.clone(body) : decorate(C.clone(body))); else await ref.delete();
           failed.delete(id);
           break;
         } catch (e) {
@@ -124,13 +128,57 @@
   }
   const pending = (id) => queues[id] && (queues[id].busy || queues[id].dirty);
 
+  /* Fill in ownership, and give the assignee a copy of the owner's type and importance
+     names/colors, since their own settings won't have the owner's ids. */
+  function decorate(body) {
+    if (remote && remote.prepare) remote.prepare(body);
+    if (!state.sharing || body.ownerId !== state.owner) return body;
+    if (body.assigneeId) {
+      const ty = S.typeById(body.typeId), lv = S.levelById(body.levelId);
+      body.typeSnap = ty ? { name: ty.name, color: ty.color, glyph: ty.glyph } : null;
+      body.levelSnap = lv ? { name: lv.name, color: lv.color } : null;
+    } else { delete body.typeSnap; delete body.levelSnap; }
+    return body;
+  }
+
+  const personName = (name, email) => (name || email || 'Someone').split(' ')[0];
+
+  /* Tell the person about things other people did: new assignments to them,
+     and completions or hand-backs on tasks they assigned. */
+  function notice(prev, tasks) {
+    if (!state.sharing || !state.owner || !C.toast) return;
+    const me = state.owner;
+    const seen = new Set(state.seen || []);
+    const fresh = tasks.filter((t) => t.assigneeId === me && t.ownerId !== me && !t.done && !seen.has(t.id));
+    const present = new Set(tasks.filter((t) => t.assigneeId === me).map((t) => t.id));
+    state.seen = Array.from(new Set([...seen].filter((id) => present.has(id)).concat([...present])));
+    const msgs = [];
+    tasks.forEach((t) => {
+      const p = prev.get(t.id);
+      if (!p || p.ownerId !== me || !p.assigneeId || p.assigneeId === me || pending(t.id)) return;
+      const who = personName(p.assigneeName, p.assigneeEmail);
+      if (!p.done && t.done && t.assigneeId === p.assigneeId) msgs.push([who + ' completed “' + t.title + '”', t.id]);
+      else if (!t.assigneeId) msgs.push([who + ' handed back “' + t.title + '”', t.id]);
+    });
+    if (fresh.length === 1) {
+      const t = fresh[0];
+      C.toast(personName(t.ownerName, t.ownerEmail) + ' assigned you “' + t.title + '”', { action: 'Open', onAction: () => C.openEditor(t.id), duration: 8000 });
+    } else if (fresh.length > 1) {
+      C.toast(fresh.length + ' tasks were assigned to you', { action: 'Show', onAction: () => C.showAssignedToMe && C.showAssignedToMe(), duration: 8000 });
+    }
+    if (msgs.length === 1) C.toast(msgs[0][0], { action: 'Open', onAction: () => C.openEditor(msgs[0][1]), duration: 8000 });
+    else if (msgs.length > 1) C.toast(msgs.length + ' updates on tasks you assigned');
+  }
+
   function goLocal(error) {
     remote = null;
+    state.sharing = false;
     if (unlisten) { try { unlisten(); } catch (e) { /* already closed */ } unlisten = null; }
     setSync({ status: error ? 'error' : 'local', error: error || null, pending: 0 });
   }
 
   function applySnapshot(snap) {
+    const prev = new Map(state.tasks.map((t) => [t.id, C.clone(t)]));
     const tasks = [];
     const seen = new Set();
     snap.docs.forEach((d) => {
@@ -152,6 +200,7 @@
     // keep local tasks whose create hasn't landed yet (or was refused, so nothing is lost)
     state.tasks.forEach((t) => { if (!seen.has(t.id) && (pending(t.id) || failed.has(t.id))) tasks.push(t); });
     state.tasks = tasks;
+    notice(prev, tasks);
     if (snap.metadata && !snap.metadata.fromCache) {
       state.sync.lastAt = Date.now();
       state.sync.cloudCount = snap.docs.filter((d) => d.id !== 'settings').length;
@@ -205,9 +254,11 @@
           if (snap.metadata && snap.metadata.fromCache && navigator.onLine) return; // wait for server truth
           first = false;
           clearTimeout(timer);
-          remote = { col: p.col };
+          remote = { col: p.col, prepare: p.prepare };
           state.syncLabel = p.label;
           state.owner = p.uid;
+          state.me = p.me || null;
+          state.sharing = p.label === 'firebase';
           const wasLate = settled; // answered after the timeout: push what we have
           if (snap.empty) { state.sync.cloudCount = 0; if (wasLate) pushAll(); refreshStatus(); return done({ status: 'remote-empty', uid: p.uid }); }
           applySnapshot(snap);
@@ -266,6 +317,9 @@
         state.types = local.types || C.clone(DEFAULT_TYPES);
         state.levels = (local.levels && local.levels.length) ? local.levels : C.clone(DEFAULT_LEVELS);
         state.prefs = { ...DEFAULT_PREFS, ...(local.prefs || {}) };
+        state.owner = local.owner || null;
+        state.me = local.me || null;
+        state.seen = local.seen || [];
         state.ready = true;
         emit();
       }
@@ -273,6 +327,7 @@
       const status = res && res.status;
       // never push one person's cached tasks into a different signed-in account
       const foreign = local && local.owner && res && local.owner !== res.uid;
+      if (foreign) state.seen = [];
       if ((!local || foreign) && status !== 'remote-data') {
         state.types = C.clone(DEFAULT_TYPES);
         state.levels = C.clone(DEFAULT_LEVELS);
@@ -302,6 +357,42 @@
     levelRank(id) { const i = state.levels.findIndex((l) => l.id === id); return i < 0 ? state.levels.length : i; },
     get(id) { return state.tasks.find((t) => t.id === id) || null; },
 
+    /* ---------- sharing ---------- */
+    sharing() { return !!(state.sharing && state.owner); },
+    me() { return state.me; },
+    /** tasks with no owner yet (local, or created before sign-in) belong to this person */
+    isOwner(t) { return !!t && (!t.ownerId || t.ownerId === state.owner); },
+    isAssignedToMe(t) { return !!(t && t.assigneeId && t.assigneeId === state.owner && t.ownerId !== state.owner); },
+    canDelete(t) { return S.isOwner(t) || (S.isAssignedToMe(t) && !!t.spawnedFrom && !t.done); },
+    /** the type/importance to show: the owner's snapshot when the task came from someone else */
+    typeOf(t) { return (!S.isOwner(t) && t.typeSnap) ? t.typeSnap : S.typeById(t.typeId); },
+    levelOf(t) { return (!S.isOwner(t) && t.levelSnap) ? t.levelSnap : S.levelById(t.levelId); },
+    /** fields that assign a task to person {uid,name,email}, or back to me when null */
+    assigneeFields(person) {
+      const me = state.me || {}, owner = state.owner;
+      const base = { ownerId: owner, ownerName: me.name || null, ownerEmail: me.email || null };
+      if (!person || person.uid === owner) return Object.assign(base, { assigneeId: null, assigneeName: null, assigneeEmail: null, members: [owner] });
+      return Object.assign(base, { assigneeId: person.uid, assigneeName: person.name || null, assigneeEmail: person.email || null, members: [owner, person.uid] });
+    },
+    /** assignee gives the task back to its owner */
+    returnToOwner(id) {
+      const t = S.get(id); if (!t || !S.isAssignedToMe(t)) return null;
+      return S.updateTask(id, { assigneeId: null, assigneeName: null, assigneeEmail: null, members: [t.ownerId] });
+    },
+    /** people I've recently worked with, newest first */
+    people() {
+      const m = new Map(), me = state.owner;
+      state.tasks.slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).forEach((t) => {
+        if (t.ownerId === me && t.assigneeId && !m.has(t.assigneeId)) m.set(t.assigneeId, { uid: t.assigneeId, name: t.assigneeName || '', email: t.assigneeEmail || '' });
+        if (t.assigneeId === me && t.ownerId && t.ownerId !== me && !m.has(t.ownerId)) m.set(t.ownerId, { uid: t.ownerId, name: t.ownerName || '', email: t.ownerEmail || '' });
+      });
+      return Array.from(m.values()).slice(0, 8);
+    },
+    findPerson(email) {
+      const fb = C.firebaseSync;
+      return fb && fb.findPerson ? fb.findPerson(email) : Promise.resolve(null);
+    },
+
     addTask(partial) {
       const now = Date.now();
       const t = Object.assign({
@@ -322,6 +413,7 @@
     deleteTask(id) {
       const i = state.tasks.findIndex((t) => t.id === id);
       if (i < 0) return null;
+      if (!S.canDelete(state.tasks[i])) return null;
       const [t] = state.tasks.splice(i, 1);
       commit(id);
       return t;
@@ -336,14 +428,14 @@
       S.updateTask(id, { done, doneAt: done ? Date.now() : null });
       if (done && t.repeat && t.repeat !== 'none' && !t.spawnedNext) {
         const next = C.clone(t);
-        Object.assign(next, { id: C.uid('t'), done: false, doneAt: null, createdAt: Date.now(), due: C.nextDue(t.due, t.repeat) });
+        Object.assign(next, { id: C.uid('t'), done: false, doneAt: null, createdAt: Date.now(), due: C.nextDue(t.due, t.repeat), spawnedFrom: t.id });
         next.subtasks = (next.subtasks || []).map((s) => ({ ...s, done: false }));
         delete next.spawnedNext;
         spawned = S.addTask(next);
         S.updateTask(id, { spawnedNext: spawned.id });
       } else if (!done && t.spawnedNext) {
         const sp = S.get(t.spawnedNext);
-        if (sp && !sp.done) S.deleteTask(sp.id);
+        if (sp && !sp.done && S.canDelete(sp)) S.deleteTask(sp.id);
         S.updateTask(id, { spawnedNext: null });
       }
       return { task: t, spawned };
@@ -358,12 +450,12 @@
     },
 
     clearCompleted() {
-      const gone = state.tasks.filter((t) => t.done);
+      const gone = state.tasks.filter((t) => t.done && S.isOwner(t));
       gone.forEach((t) => S.deleteTask(t.id));
       return gone;
     },
     clearSamples() {
-      const gone = state.tasks.filter((t) => t.sample);
+      const gone = state.tasks.filter((t) => t.sample && S.isOwner(t));
       gone.forEach((t) => S.deleteTask(t.id));
       return gone.length;
     },
@@ -382,6 +474,7 @@
       let added = 0;
       data.tasks.forEach((t) => {
         if (!t || !t.id || !t.title) return;
+        if (t.ownerId && state.owner && t.ownerId !== state.owner) return; // someone else's task
         const ex = S.get(t.id);
         if (ex) Object.assign(ex, t); else { state.tasks.push(t); added++; }
         commit(t.id, true);
@@ -390,8 +483,9 @@
       return { added, total: data.tasks.length };
     },
     resetAll() {
-      const ids = state.tasks.map((t) => t.id);
-      state.tasks = [];
+      // tasks other people assigned to you stay; hand them back to remove them
+      const ids = state.tasks.filter((t) => S.isOwner(t)).map((t) => t.id);
+      state.tasks = state.tasks.filter((t) => !S.isOwner(t));
       ids.forEach((id) => commit(id, true));
       state.types = C.clone(DEFAULT_TYPES);
       state.levels = C.clone(DEFAULT_LEVELS);

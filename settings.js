@@ -80,7 +80,7 @@
         : fb && fb.reason === 'no-file' ? ['Sync is off: firebase-config.js didn’t load', 'The page couldn’t find firebase-config.js next to index.html. Upload it to the same folder.']
         : ['Saved in this browser', 'Tasks stay on this device. Export a backup to move them somewhere else.'],
       connecting: ['Connecting…', 'Reaching your account.'],
-      synced: ['Synced to your account', 'Your tasks follow you to every device you sign in on. Only you can see them.'],
+      synced: ['Synced to your account', 'Your tasks follow you to every device you sign in on. A task is visible only to you and the person it’s assigned to.'],
       saving: ['Saving changes…', sy.pending + ' change' + (sy.pending === 1 ? '' : 's') + ' on the way.'],
       offline: ['Offline', 'Changes are kept on this device and sent when you’re back online.'],
       error: ['Sync isn’t working', 'Your changes are safe on this device. Fix the problem below, then press Retry.']
@@ -90,6 +90,7 @@
     if (fb && fb.user) {
       const how = { 'google.com': 'Google', password: 'email + password' }[fb.user.method] || fb.user.method;
       rows.push(['Signed in as', '<span class="mono">' + esc(fb.user.email || fb.user.name || 'you') + '</span> <span class="muted">(' + esc(how) + ')</span>']);
+      rows.push(['Can receive tasks', fb.user.verified ? 'Yes, others can assign to <span class="mono">' + esc(fb.user.email || '') + '</span>' : '<span class="muted">No. Verify your email address, or sign in with Google, so others can assign you tasks.</span>']);
       rows.push(['Account ID', '<span class="mono">' + esc(fb.user.uid.slice(0, 8)) + '</span> <span class="muted">must match on every device</span>']);
     }
     if (sy.provider) rows.push(['Last synced', esc(C.ago(sy.lastAt))]);

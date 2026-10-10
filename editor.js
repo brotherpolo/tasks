@@ -12,6 +12,12 @@
       due: null, time: null, subtasks: [], repeat: 'none', done: false
     }, idOrPreset || {});
     if (open) open.close(true);
+    // the assignee of someone else's task can do the work and move the date, nothing more
+    const ro = !!existing && !S.isOwner(existing);
+    const sharing = S.sharing();
+    let assignee = existing && existing.assigneeId && !ro ? { uid: existing.assigneeId, name: existing.assigneeName || '', email: existing.assigneeEmail || '' } : null;
+    const assigneeBefore = assignee && assignee.uid;
+    let assignQuery = '', assignMsg = '', assignBusy = false, confirmBack = false;
 
     const root = document.getElementById('overlay-root');
     const wrap = document.createElement('div');
@@ -23,7 +29,8 @@
       '<button type="button" class="icon-btn" data-close aria-label="Close">' + icon('x') + '</button></div>' +
       '<div class="sheet-body"></div>' +
       '<div class="sheet-foot">' +
-      (existing ? '<button type="button" class="btn ghost danger" data-act="delete">' + icon('trash') + '<span>Delete</span></button>' : '') +
+      (existing && !ro ? '<button type="button" class="btn ghost danger" data-act="delete">' + icon('trash') + '<span>Delete</span></button>' : '') +
+      (ro ? '<button type="button" class="btn ghost" data-act="handback">' + icon('upload') + '<span>Hand back</span></button>' : '') +
       '<span class="spacer"></span>' +
       '<button type="button" class="btn ghost" data-close>Cancel</button>' +
       '<button type="submit" class="btn primary">' + (existing ? 'Save' : 'Add task') + '</button>' +
@@ -41,22 +48,26 @@
         '<label class="sr" for="ed-title">Title</label>' +
         '<div class="ed-title-row">' +
         (existing ? '<button type="button" class="check lg' + (draft.done ? ' on' : '') + '" data-act="done" aria-pressed="' + draft.done + '" aria-label="Mark complete" style="--lv:' + lvColor(draft.levelId) + '">' + icon('check') + '</button>' : '') +
-        '<textarea id="ed-title" class="ed-title" rows="1" placeholder="What needs doing?" required>' + esc(draft.title) + '</textarea></div>' +
+        '<textarea id="ed-title" class="ed-title" rows="1" placeholder="What needs doing?" required' + (ro ? ' readonly' : '') + '>' + esc(draft.title) + '</textarea></div>' +
+        (ro ? fromNote() : '') +
+        (sharing && !ro ? assignField() : '') +
 
+        (ro ? roField('Importance', S.levelOf(existing), false) :
         '<div class="field"><span class="field-label">Importance</span><div class="seg" role="radiogroup">' +
         levels.map((l) => '<button type="button" role="radio" class="seg-btn' + (draft.levelId === l.id ? ' on' : '') + '" data-level="' + l.id + '" aria-checked="' + (draft.levelId === l.id) + '" style="--c:' + l.color + '"><i class="dot"></i>' + esc(l.name) + '</button>').join('') +
-        '</div></div>' +
+        '</div></div>') +
 
+        (ro ? roField('Type', S.typeOf(existing), true) :
         '<div class="field"><span class="field-label">Type</span><div class="chips">' +
         '<button type="button" class="chip' + (!draft.typeId ? ' on' : '') + '" data-type="">None</button>' +
         types.map((t) => '<button type="button" class="chip' + (draft.typeId === t.id ? ' on' : '') + '" data-type="' + t.id + '" style="--c:' + t.color + '">' + icon(t.glyph) + esc(t.name) + '</button>').join('') +
-        '</div></div>' +
+        '</div></div>') +
 
         '<div class="field"><span class="field-label">When</span>' +
         '<div class="chips">' + quick.map(([lbl, k]) => '<button type="button" class="chip' + ((draft.due || '') === k ? ' on' : '') + '" data-due="' + k + '">' + lbl + '</button>').join('') + '</div>' +
         '<div class="row2"><label class="input-wrap"><span class="sr">Date</span>' + icon('calendar') + '<input id="ed-date" type="date" value="' + (draft.due || '') + '"></label>' +
         '<label class="input-wrap"><span class="sr">Time</span>' + icon('clock') + '<input id="ed-time" type="time" value="' + (draft.time || '') + '"></label></div>' +
-        '<label class="input-wrap"><span class="sr">Repeat</span>' + icon('repeat') + '<select id="ed-repeat">' +
+        '<label class="input-wrap"><span class="sr">Repeat</span>' + icon('repeat') + '<select id="ed-repeat"' + (ro ? ' disabled' : '') + '>' +
         C.REPEATS.map((r) => '<option value="' + r.id + '"' + (draft.repeat === r.id ? ' selected' : '') + '>' + r.label + '</option>').join('') + '</select></label>' +
         '</div>' +
 
@@ -68,6 +79,51 @@
 
         '<div class="field"><label class="field-label" for="ed-notes">Notes</label><textarea id="ed-notes" rows="3" placeholder="Links, details, context…">' + esc(draft.notes || '') + '</textarea></div>';
       autoGrow(body.querySelector('#ed-title'));
+      const aq = body.querySelector('#ed-assign');
+      if (aq && document.activeElement !== aq) aq.value = assignQuery;
+    }
+    function fromNote() {
+      const o = { uid: existing.ownerId, name: existing.ownerName, email: existing.ownerEmail };
+      const first = C.firstName(o.name, o.email);
+      return '<div class="ed-from">' + C.avatar(o) + '<p><b>' + esc(o.name || o.email || 'Someone') + '</b> assigned this to you. You can change the date, checklist and notes. Ask ' + esc(first) + ' to change anything else.</p></div>';
+    }
+    function roField(label, v, glyph) {
+      return '<div class="field"><span class="field-label">' + label + '</span><div class="chips">' +
+        (v ? '<span class="chip on static" style="--c:' + v.color + '">' + (glyph && v.glyph ? icon(v.glyph) : '<i class="dot"></i>') + esc(v.name) + '</span>' : '<span class="chip static">None</span>') +
+        '</div></div>';
+    }
+    function assignField() {
+      const me = S.me() || {};
+      const people = S.people().filter((p) => p.uid !== S.state.owner);
+      if (assignee && !people.some((p) => p.uid === assignee.uid)) people.unshift(assignee);
+      return '<div class="field"><span class="field-label">Assigned to</span>' +
+        '<div class="chips">' +
+        '<button type="button" class="chip' + (!assignee ? ' on' : '') + '" data-assign="" aria-pressed="' + !assignee + '">' + C.avatar({ uid: S.state.owner, name: me.name, email: me.email }) + 'Me</button>' +
+        people.map((p) => '<button type="button" class="chip' + (assignee && assignee.uid === p.uid ? ' on' : '') + '" data-assign="' + esc(p.uid) + '" aria-pressed="' + !!(assignee && assignee.uid === p.uid) + '" title="' + esc(p.email || '') + '">' + C.avatar(p) + esc(p.name || p.email) + '</button>').join('') +
+        '</div>' +
+        '<div class="assign-find"><label class="input-wrap">' + icon('search') + '<span class="sr">Assign by email</span><input id="ed-assign" type="email" inputmode="email" autocomplete="off" placeholder="Assign by email"></label>' +
+        '<button type="button" class="btn sm" data-act="find"' + (assignBusy ? ' disabled' : '') + '>' + (assignBusy ? 'Looking up…' : 'Assign') + '</button></div>' +
+        (assignMsg ? '<p class="field-msg" role="status">' + esc(assignMsg) + '</p>' : '') +
+        '</div>';
+    }
+    async function findAssignee() {
+      const email = (body.querySelector('#ed-assign') || {}).value || '';
+      assignQuery = email;
+      const e = email.trim().toLowerCase();
+      if (!e) { assignMsg = 'Type the email address they sign in with.'; sync(); return render(); }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) { assignMsg = 'That email address doesn’t look right.'; sync(); return render(); }
+      const me = S.me() || {};
+      if (e === me.email) { assignee = null; assignQuery = ''; assignMsg = ''; sync(); return render(); }
+      sync(); assignBusy = true; assignMsg = ''; render();
+      try {
+        const p = await S.findPerson(e);
+        if (!wrap.isConnected) return;
+        if (p && p.uid) { assignee = p; assignQuery = ''; assignMsg = ''; }
+        else assignMsg = 'No one has signed in to Cadence with ' + e + ' yet. Ask them to sign in once with Google, then try again.';
+      } catch (err) {
+        assignMsg = 'Couldn’t look that up: ' + ((err && (err.code || err.message)) || 'unknown error') + '.';
+      }
+      assignBusy = false; sync(); render();
     }
     function lvColor(id) { const l = S.levelById(id); return l ? l.color : 'var(--ink-3)'; }
     function autoGrow(el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }
@@ -81,6 +137,7 @@
     render();
 
     body.addEventListener('input', (e) => {
+      if (e.target.id === 'ed-assign') assignQuery = e.target.value;
       if (e.target.id === 'ed-title') autoGrow(e.target);
       if (e.target.dataset.subEdit != null) draft.subtasks[+e.target.dataset.subEdit].title = e.target.value;
     });
@@ -88,6 +145,7 @@
       if (e.target.id === 'ed-date' || e.target.id === 'ed-time') { sync(); render(); }
     });
     body.addEventListener('keydown', (e) => {
+      if (e.target.id === 'ed-assign' && e.key === 'Enter') { e.preventDefault(); findAssignee(); return; }
       if (e.target.id === 'ed-sub-new' && e.key === 'Enter') {
         e.preventDefault();
         const v = e.target.value.trim(); if (!v) return;
@@ -102,6 +160,13 @@
       const b = e.target.closest('button,[data-close]');
       if (!b) return;
       if (b.hasAttribute('data-close')) return close();
+      if (b.dataset.act !== 'handback' && confirmBack) { confirmBack = false; resetBack(); }
+      if (b.dataset.assign != null) { sync(); const uid = b.dataset.assign; assignee = uid ? (S.people().concat(assignee ? [assignee] : []).find((p) => p.uid === uid) || null) : null; assignMsg = ''; render(); return; }
+      if (b.dataset.act === 'find') { findAssignee(); return; }
+      if (b.dataset.act === 'handback') {
+        if (!confirmBack) { confirmBack = true; b.querySelector('span').textContent = 'Hand back to ' + C.firstName(existing.ownerName, existing.ownerEmail) + '?'; b.classList.add('danger'); return; }
+        close(true); C.handBack(existing.id); return;
+      }
       if (b.dataset.level) { sync(); draft.levelId = b.dataset.level; render(); }
       else if (b.dataset.type != null) { sync(); draft.typeId = b.dataset.type || null; render(); }
       else if (b.dataset.due != null) { sync(); draft.due = b.dataset.due || null; if (!draft.due) draft.time = null; render(); }
@@ -123,18 +188,27 @@
       draft.subtasks = (draft.subtasks || []).filter((x) => x.title.trim());
       const pendingSub = body.querySelector('#ed-sub-new').value.trim();
       if (pendingSub) draft.subtasks.push({ id: C.uid('s'), title: pendingSub, done: false });
+      const who = sharing && !ro ? S.assigneeFields(assignee) : {};
+      const forName = assignee ? C.firstName(assignee.name, assignee.email) : '';
       if (existing) {
         const wasDone = existing.done;
-        const patch = { title: draft.title, notes: draft.notes, typeId: draft.typeId, levelId: draft.levelId, due: draft.due, time: draft.due ? draft.time : null, repeat: draft.repeat, subtasks: draft.subtasks };
+        const patch = ro
+          ? { notes: draft.notes, due: draft.due, time: draft.due ? draft.time : null, subtasks: draft.subtasks }
+          : Object.assign({ title: draft.title, notes: draft.notes, typeId: draft.typeId, levelId: draft.levelId, due: draft.due, time: draft.due ? draft.time : null, repeat: draft.repeat, subtasks: draft.subtasks }, who);
         S.updateTask(existing.id, patch);
         if (draft.done !== wasDone) C.completeTask(existing.id);
         close(true);
+        if (sharing && !ro && (assignee && assignee.uid) !== assigneeBefore) C.toast(assignee ? 'Assigned “' + draft.title + '” to ' + forName : 'You’re doing “' + draft.title + '” yourself now');
       } else {
-        const t = S.addTask({ title: draft.title, notes: draft.notes, typeId: draft.typeId, levelId: draft.levelId, due: draft.due, time: draft.due ? draft.time : null, repeat: draft.repeat, subtasks: draft.subtasks });
+        const t = S.addTask(Object.assign({ title: draft.title, notes: draft.notes, typeId: draft.typeId, levelId: draft.levelId, due: draft.due, time: draft.due ? draft.time : null, repeat: draft.repeat, subtasks: draft.subtasks }, who));
         close(true);
-        C.toast('Added “' + t.title + '”' + (t.due ? ' · ' + C.relDate(t.due) : ''));
+        C.toast('Added “' + t.title + '”' + (assignee ? ' for ' + forName : '') + (t.due ? ' · ' + C.relDate(t.due) : ''));
       }
     });
+    function resetBack() {
+      const hb = wrap.querySelector('[data-act="handback"]');
+      if (hb) { hb.querySelector('span').textContent = 'Hand back'; hb.classList.remove('danger'); }
+    }
     const onKey = (e) => {
       if (e.key === 'Escape') { e.preventDefault(); close(); }
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); form.requestSubmit(); }

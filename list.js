@@ -3,7 +3,7 @@
   const C = window.Cadence;
   const { D, esc, icon } = C;
   const S = () => C.store;
-  const ui = { types: new Set(), levels: new Set(), q: '', tableSort: { key: 'due', dir: 1 }, flash: null, collapsed: new Set() };
+  const ui = { scope: 'all', types: new Set(), levels: new Set(), q: '', tableSort: { key: 'due', dir: 1 }, flash: null, collapsed: new Set() };
   let el = null;
 
   const view = (C.views = C.views || {}).list = {
@@ -100,6 +100,16 @@
     },
     clearLevels() { ui.levels.clear(); filtersChanged(); }
   };
+  /* toast hook: "N tasks were assigned to you" → Show */
+  C.showAssignedToMe = function () { ui.scope = 'tome'; C.go('list'); filtersChanged(); };
+  const SCOPES = [
+    ['all', 'Everything', () => true],
+    ['mine', 'Mine to do', (t) => (S().isOwner(t) && !t.assigneeId) || S().isAssignedToMe(t)],
+    ['tome', 'Assigned to me', (t) => S().isAssignedToMe(t)],
+    ['byme', 'Assigned to others', (t) => S().isOwner(t) && !!t.assigneeId]
+  ];
+  const inScope = (t) => !S().sharing() || (SCOPES.find((x) => x[0] === ui.scope) || SCOPES[0])[2](t);
+
   function filtersChanged() {
     if (el) { renderFilters(); renderBody(); }
     if (C.refreshChrome) C.refreshChrome();
@@ -186,9 +196,15 @@
 
   function renderFilters() {
     const st = S().state;
-    const any = ui.types.size || ui.levels.size;
+    const any = ui.types.size || ui.levels.size || ui.scope !== 'all';
+    const open = st.tasks.filter((t) => !t.done);
     el.querySelector('#ls-filters').innerHTML =
       '<div class="chips scroll-x">' +
+      (S().sharing() && st.tasks.some((t) => t.assigneeId) ?
+        SCOPES.map(([id, label, fn]) => {
+          const n = id === 'all' ? 0 : open.filter(fn).length;
+          return '<button type="button" class="chip scope' + (ui.scope === id ? ' on' : '') + '" data-fscope="' + id + '" aria-pressed="' + (ui.scope === id) + '">' + label + (n ? ' <span class="mono muted">' + n + '</span>' : '') + '</button>';
+        }).join('') + '<span class="chip-sep" aria-hidden="true"></span>' : '') +
       st.types.map((t) => '<button type="button" class="chip' + (ui.types.has(t.id) ? ' on' : '') + '" data-ft="' + t.id + '" aria-pressed="' + ui.types.has(t.id) + '" style="--c:' + t.color + '">' + icon(t.glyph) + esc(t.name) + '</button>').join('') +
       '<span class="chip-sep" aria-hidden="true"></span>' +
       st.levels.map((l) => '<button type="button" class="chip' + (ui.levels.has(l.id) ? ' on' : '') + '" data-fl="' + l.id + '" aria-pressed="' + ui.levels.has(l.id) + '" style="--c:' + l.color + '"><i class="dot"></i>' + esc(l.name) + '</button>').join('') +
@@ -197,9 +213,10 @@
   }
   function onFilter(e) {
     const b = e.target.closest('button'); if (!b) return;
-    if (b.dataset.ft) toggleSet(ui.types, b.dataset.ft);
+    if (b.dataset.fscope) ui.scope = b.dataset.fscope;
+    else if (b.dataset.ft) toggleSet(ui.types, b.dataset.ft);
     else if (b.dataset.fl) toggleSet(ui.levels, b.dataset.fl);
-    else if (b.hasAttribute('data-fclear')) { ui.types.clear(); ui.levels.clear(); }
+    else if (b.hasAttribute('data-fclear')) { ui.types.clear(); ui.levels.clear(); ui.scope = 'all'; }
     filtersChanged();
   }
   const toggleSet = (set, v) => (set.has(v) ? set.delete(v) : set.add(v));
@@ -209,6 +226,7 @@
     const q = ui.q.trim().toLowerCase();
     return S().state.tasks.filter((t) =>
       (includeDone || !t.done) &&
+      inScope(t) &&
       (!ui.types.size || ui.types.has(t.typeId)) &&
       (!ui.levels.size || ui.levels.has(t.levelId)) &&
       (!q || t.title.toLowerCase().includes(q) || (t.notes || '').toLowerCase().includes(q) || (t.subtasks || []).some((x) => x.title.toLowerCase().includes(q))));
@@ -270,7 +288,7 @@
     if (!S().state.ready) { body.innerHTML = '<div class="skeleton">' + '<i></i>'.repeat(4) + '</div>'; return; }
     if (p.listMode === 'table') { body.innerHTML = renderTable(tasks.filter((t) => p.showDone || !t.done)); return flash(body); }
     const gs = groups(tasks);
-    const filtered = ui.q || ui.types.size || ui.levels.size;
+    const filtered = ui.q || ui.types.size || ui.levels.size || ui.scope !== 'all';
     if (!gs.some((g) => g.items.length)) {
       body.innerHTML = '<div class="empty">' + icon(filtered ? 'search' : 'check', 'empty-ic') +
         '<h3>' + (filtered ? 'No tasks match' : 'All clear') + '</h3><p>' +
@@ -299,12 +317,14 @@
 
   function row(t) {
     const S_ = S();
-    const ty = S_.typeById(t.typeId), lv = S_.levelById(t.levelId);
+    const ty = S_.typeOf(t), lv = S_.levelOf(t);
     const tk = D.todayKey();
     const overdue = !t.done && t.due && t.due < tk;
     const subs = t.subtasks || [];
     const sd = subs.filter((x) => x.done).length;
     const meta = [];
+    const who = C.whoChip(t);
+    if (who) meta.push(who);
     if (t.due) meta.push('<span class="meta-due' + (overdue ? ' overdue' : t.due === tk ? ' today' : '') + '">' + icon('calendar') + C.relDate(t.due) + (overdue ? ' · ' + (-D.diff(t.due, tk)) + 'd late' : '') + (t.time ? ' · ' + C.fmtTime(t.time) : '') + '</span>');
     if (ty) meta.push('<span class="type-tag" style="--c:' + ty.color + '">' + icon(ty.glyph) + esc(ty.name) + '</span>');
     if (subs.length) meta.push('<span class="meta-sub" title="' + sd + ' of ' + subs.length + ' steps"><span class="mini-bar"><i style="width:' + (sd / subs.length * 100) + '%"></i></span><span class="mono">' + sd + '/' + subs.length + '</span></span>');
@@ -318,7 +338,7 @@
       (lv ? '<span class="lv-tag" title="Importance: ' + esc(lv.name) + '">' + esc(lv.name) + '</span>' : '') +
       '<div class="task-acts">' +
       (!t.done ? '<button type="button" class="icon-btn sm" data-snooze title="Move to tomorrow" aria-label="Move to tomorrow">' + icon('chevR') + '</button>' : '') +
-      '<button type="button" class="icon-btn sm" data-del title="Delete" aria-label="Delete">' + icon('trash') + '</button></div>' +
+      (S_.canDelete(t) ? '<button type="button" class="icon-btn sm" data-del title="Delete" aria-label="Delete">' + icon('trash') + '</button>' : '') + '</div>' +
       '</div></div>';
   }
 
@@ -327,7 +347,7 @@
     const { key, dir } = ui.tableSort;
     const val = {
       title: (t) => t.title.toLowerCase(),
-      type: (t) => (S().typeById(t.typeId) || { name: '~' }).name.toLowerCase(),
+      type: (t) => (S().typeOf(t) || { name: '~' }).name.toLowerCase(),
       level: (t) => S().levelRank(t.levelId),
       due: (t) => (t.due || '9999') + (t.time || ''),
       status: (t) => (t.done ? 1 : 0),
@@ -339,12 +359,12 @@
     const tk = D.todayKey();
     return '<div class="table-wrap"><table class="tbl"><thead><tr><th class="c-check"><span class="sr">Done</span></th>' + th('title', 'Task') + th('type', 'Type') + th('level', 'Importance') + th('due', 'Due') + th('status', 'Status') + th('created', 'Created') + '</tr></thead><tbody>' +
       tasks.map((t) => {
-        const ty = S().typeById(t.typeId), lv = S().levelById(t.levelId);
+        const ty = S().typeOf(t), lv = S().levelOf(t);
         const overdue = !t.done && t.due && t.due < tk;
         const subs = t.subtasks || [];
         return '<tr data-row="' + t.id + '" class="' + (t.done ? 'done' : '') + '" tabindex="0" style="--lv:' + (lv ? lv.color : 'var(--ink-3)') + '">' +
           '<td class="c-check"><button type="button" class="check sm" data-check aria-pressed="' + !!t.done + '" aria-label="Toggle done">' + icon('check') + '</button></td>' +
-          '<td class="c-title"><span class="task-title">' + esc(t.title) + '</span>' + (subs.length ? ' <span class="muted mono">' + subs.filter((x) => x.done).length + '/' + subs.length + '</span>' : '') + '</td>' +
+          '<td class="c-title"><span class="task-title">' + esc(t.title) + '</span>' + C.whoChip(t, true) + (subs.length ? ' <span class="muted mono">' + subs.filter((x) => x.done).length + '/' + subs.length + '</span>' : '') + '</td>' +
           '<td>' + (ty ? '<span class="type-tag" style="--c:' + ty.color + '">' + icon(ty.glyph) + esc(ty.name) + '</span>' : '<span class="muted">—</span>') + '</td>' +
           '<td>' + (lv ? '<span class="lv-tag">' + esc(lv.name) + '</span>' : '<span class="muted">—</span>') + '</td>' +
           '<td class="mono' + (overdue ? ' overdue' : '') + '">' + (t.due ? esc(C.relDate(t.due)) + (t.time ? ' ' + C.fmtTime(t.time) : '') : '<span class="muted">—</span>') + '</td>' +

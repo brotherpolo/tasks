@@ -4,6 +4,7 @@ A build-free task app: plain HTML, CSS and JavaScript files. No bundler, no npm 
 
 - **Tasks**: natural-language quick add, inventory summary, filters, grouping, agenda and table layouts, swipe gestures on phones
 - **Calendar**: month and week views; drag tasks between days or onto "Unscheduled"
+- **Sharing**: assign a task to anyone who has signed in with Google; they see it in their own list
 - **Settings**: task types (name, color, icon, order), importance levels (name, color, rank, default), theme, week start, backup and restore
 
 ## Run it
@@ -47,14 +48,27 @@ firebase deploy --only firestore:rules
 firebase deploy --only hosting     # optional: hosts this folder
 ```
 
-Once configured, the app shows a sign-in screen and every user gets a private space:
+Once configured, the app shows a sign-in screen. Data is stored like this:
 
 ```
-users/{uid}/items/settings   types, importance levels, defaults
-users/{uid}/items/{taskId}   one document per task
+tasks/{taskId}               every task; members = [owner] or [owner, assignee]
+users/{uid}/items/settings   your types, importance levels, defaults (private)
+people/{email}               { uid, name }, so others can assign you tasks by email
 ```
 
-`firestore.rules` lets a signed-in user read and write only their own `users/{uid}/…` documents, validates the shape and size of every task and settings write, and denies all other paths. To require verified email addresses, swap in the commented `isOwner` variant in the rules file.
+`firestore.rules` makes each task visible only to its owner and its assignee, validates the shape and size of every write, and denies all other paths.
+
+## Assigning tasks
+
+In the task editor, **Assigned to** shows "Me", the people you've worked with recently, and an email box. Type someone's email and press **Assign**.
+
+- The person must have signed in to Cadence once. Signing in lists their email in the `people` directory. Directory entries can be looked up one exact email at a time, never listed, and only verified addresses can claim one. Every Google account is verified; email/password users need to verify their address first.
+- **The owner** can change anything, reassign, or delete.
+- **The assignee** can complete the task, change its date and time, and edit the checklist and notes. Title, type, importance and repeat are read-only for them. They can't delete it, but they can **Hand back** the task to the owner.
+- The assignee sees the owner's type and importance names and colors, even if their own settings differ.
+- Completing a repeating task as the assignee creates the next occurrence for the same owner and assignee.
+- The app shows a notice when someone assigns you a task, and when an assignee completes or hands back one of yours. Use the **Assigned to me** / **Assigned to others** filters on the Tasks page to see just those.
+- Version 8 moves tasks from the old `users/{uid}/items/{taskId}` location to `tasks/` automatically the first time each person signs in. **Deploy the new rules before uploading the new files**, or the move fails (nothing is lost; the app says so and offers Retry). After the move, the old location no longer accepts task writes, so an outdated open tab gets a sync error until it reloads.
 
 The Firebase web config values are public identifiers, not secrets. Access control comes from the rules. For extra protection against abuse, turn on **App Check** in the console.
 
@@ -91,4 +105,4 @@ Scripts load in the order listed in `index.html`; keep that order if you add fil
 
 **Don't overwrite your `firebase-config.js`.** Update zips from here leave it out, so your filled-in copy on GitHub stays as it is.
 
-`index.html` loads every file with a version tag (`app.js?v=7`). When you change any file, bump the number in `index.html` (and `C.VERSION` in `utils.js`) so browsers fetch the new copies instead of cached ones. Settings → Your data shows the version each device is running.
+`index.html` loads every file with a version tag (`app.js?v=8`). When you change any file, bump the number in `index.html` (and `C.VERSION` in `utils.js`) so browsers fetch the new copies instead of cached ones. Settings → Your data shows the version each device is running.
