@@ -83,8 +83,20 @@
     },
     focusQuick() { const q = el && el.querySelector('#qa-input'); if (q) q.focus(); },
     focusSearch() { const q = el && el.querySelector('#ls-search'); if (q) q.focus(); },
-    unmount() { el = null; }
+    unmount() { el = null; },
+    /* sidebar hooks: show only one type (click again to show all) */
+    activeTypes() { return ui.types; },
+    filterType(id) {
+      if (ui.types.size === 1 && ui.types.has(id)) ui.types.clear();
+      else { ui.types.clear(); ui.types.add(id); }
+      filtersChanged();
+    },
+    clearTypes() { ui.types.clear(); filtersChanged(); }
   };
+  function filtersChanged() {
+    if (el) { renderFilters(); renderBody(); }
+    if (C.refreshChrome) C.refreshChrome();
+  }
 
   /* ---------- pieces ---------- */
   function renderTokens() {
@@ -161,7 +173,7 @@
         (none ? '<span class="mix-none" style="flex:' + none + '" title="No type: ' + none + '"></span>' : '') + '</div>' +
         '<div class="mix-legend">' + byType.map((x) => '<button type="button" class="mix-key" data-filter-type="' + x.t.id + '" style="--c:' + x.t.color + '"><i></i>' + esc(x.t.name) + ' <span class="mono">' + x.n + '</span><span class="mix-pct mono">' + Math.round(x.n / total * 100) + '%</span></button>').join('') +
         (none ? '<span class="mix-key"><i class="none"></i>No type <span class="mono">' + none + '</span></span>' : '') + '</div></div>' : '');
-    el.querySelectorAll('#ls-stats [data-filter-type]').forEach((b) => b.onclick = () => { toggleSet(ui.types, b.dataset.filterType); renderFilters(); renderBody(); });
+    el.querySelectorAll('#ls-stats [data-filter-type]').forEach((b) => b.onclick = () => { toggleSet(ui.types, b.dataset.filterType); filtersChanged(); });
   }
   const tile = (label, n, tone) => '<div class="tile ' + tone + '"><span class="tile-n mono">' + n + '</span><span class="tile-l">' + label + '</span></div>';
 
@@ -181,7 +193,7 @@
     if (b.dataset.ft) toggleSet(ui.types, b.dataset.ft);
     else if (b.dataset.fl) toggleSet(ui.levels, b.dataset.fl);
     else if (b.hasAttribute('data-fclear')) { ui.types.clear(); ui.levels.clear(); }
-    renderFilters(); renderBody();
+    filtersChanged();
   }
   const toggleSet = (set, v) => (set.has(v) ? set.delete(v) : set.add(v));
 

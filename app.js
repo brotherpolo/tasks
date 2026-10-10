@@ -95,10 +95,7 @@
       '<nav class="side-nav" aria-label="Primary">' + NAV.map((n) =>
         '<a href="#' + n.id + '" class="side-link' + (r === n.id ? ' on' : '') + '"' + (r === n.id ? ' aria-current="page"' : '') + '>' + icon(n.ic) + '<span>' + n.label + '</span>' +
         (n.id === 'list' && c.list ? '<span class="count mono" title="Due today or overdue">' + c.list + '</span>' : '') + '</a>').join('') + '</nav>' +
-      '<div class="side-sec"><span class="eyebrow">Types</span><ul class="side-types">' + st.types.map((t) => {
-        const n = st.tasks.filter((x) => !x.done && x.typeId === t.id).length;
-        return '<li style="--c:' + t.color + '">' + icon(t.glyph) + '<span>' + esc(t.name) + '</span><span class="mono muted">' + n + '</span></li>';
-      }).join('') + '</ul></div>' +
+      sideTypes(st) +
       '<div class="side-foot">' +
       '<span class="sync-pill ' + (st.mode === 'sync' ? 'on' : '') + '" title="' + (st.mode === 'sync' ? 'Synced to your account' : 'Saved in this browser') + '">' + icon(st.mode === 'sync' ? 'cloud' : 'device') + (st.mode === 'sync' ? 'Synced' : 'On this device') + '</span>' +
       '<button type="button" class="icon-btn" data-theme-toggle aria-label="Toggle dark mode">' + icon(isDark() ? 'sun' : 'moon') + '</button></div>';
@@ -113,6 +110,19 @@
       '<button type="button" class="tab" data-pal>' + icon('search') + '<span>Search</span></button>' +
       tab('settings', 'Settings', 'settings');
   }
+  function sideTypes(st) {
+    const active = C.views.list.activeTypes();
+    return '<div class="side-sec"><div class="side-sec-head"><span class="eyebrow">Types</span>' +
+      (active.size ? '<button type="button" class="side-clear" data-side-clear>Show all</button>' : '') + '</div>' +
+      '<ul class="side-types">' + st.types.map((t) => {
+        const n = st.tasks.filter((x) => !x.done && x.typeId === t.id).length;
+        const on = active.has(t.id);
+        return '<li><button type="button" class="side-type' + (on ? ' on' : '') + '" data-side-type="' + t.id + '" aria-pressed="' + on + '" title="' + (on ? 'Show all types' : 'Show only ' + esc(t.name)) + '" style="--c:' + t.color + '">' +
+          icon(t.glyph) + '<span>' + esc(t.name) + '</span><span class="mono muted">' + n + '</span></button></li>';
+      }).join('') + '</ul></div>';
+  }
+  C.refreshChrome = () => renderChrome();
+
   function tab(id, label, ic, n) {
     return '<a href="#' + id + '" class="tab' + (current === id ? ' on' : '') + '"' + (current === id ? ' aria-current="page"' : '') + '>' +
       '<span class="tab-ic">' + icon(ic) + (n ? '<span class="tab-badge mono">' + n + '</span>' : '') + '</span><span>' + label + '</span></a>';
@@ -140,6 +150,11 @@
   document.addEventListener('click', (e) => {
     if (e.target.closest('[data-new]') && !e.target.closest('#view')) { e.preventDefault(); C.openEditor(); }
     else if (e.target.closest('[data-pal]')) C.openPalette();
+    else if (e.target.closest('[data-side-type]')) {
+      C.views.list.filterType(e.target.closest('[data-side-type]').dataset.sideType);
+      if (current !== 'list') C.go('list'); else window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    else if (e.target.closest('[data-side-clear]')) { C.views.list.clearTypes(); if (current !== 'list') C.go('list'); }
     else if (e.target.closest('[data-theme-toggle]')) C.cycleTheme();
   });
 

@@ -187,10 +187,18 @@ textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent
 .count { margin-left: auto; min-width: 22px; height: 20px; padding: 0 6px; border-radius: 10px; display: inline-grid; place-items: center; font-size: 11px; font-weight: 600; background: var(--surface-2); color: var(--ink-2); }
 .side-link .count { background: color-mix(in oklab, var(--danger) 14%, var(--surface)); color: var(--danger); }
 .side-sec { display: flex; flex-direction: column; gap: 6px; padding: 6px 6px 0; }
-.side-types { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
-.side-types li { display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 6px; font-size: var(--fs-sm); color: var(--ink-2); }
-.side-types li .ic { width: 16px; height: 16px; color: var(--c); }
-.side-types li span:nth-child(2) { flex: 1; }
+.side-sec-head { display: flex; align-items: center; justify-content: space-between; min-height: 22px; }
+.side-clear { font-size: var(--fs-xs); font-weight: 600; color: var(--accent); }
+.side-types { list-style: none; margin: 0 -6px; padding: 0; display: flex; flex-direction: column; gap: 1px; }
+.side-type {
+  width: 100%; display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 12px; border-radius: 10px;
+  font-size: var(--fs-sm); color: var(--ink-2); text-align: left; transition: background .15s, color .15s;
+}
+.side-type:hover { background: var(--surface-2); color: var(--ink); }
+.side-type .ic { width: 16px; height: 16px; color: var(--c); }
+.side-type span:nth-child(2) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-type.on { background: color-mix(in oklab, var(--c) 14%, var(--surface)); color: color-mix(in oklab, var(--c) 70%, var(--ink)); font-weight: 600; box-shadow: inset 3px 0 0 var(--c); }
+.side-type.on .muted { color: inherit; }
 .side-foot { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 4px 0; border-top: 1px solid var(--line); }
 .sync-pill { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-xs); font-weight: 600; color: var(--ink-3); }
 .sync-pill .ic { width: 15px; height: 15px; }
