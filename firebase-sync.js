@@ -13,7 +13,7 @@
   const V = '10.12.2';
   const SDK = 'https://www.gstatic.com/firebasejs/' + V + '/';
 
-  const FB = { enabled, user: null, signOut: null };
+  const FB = { enabled, user: null, signOut: null, projectId: cfg.projectId || null };
   C.firebaseSync = FB;
   if (!enabled) return;
 
@@ -24,10 +24,15 @@
     document.head.appendChild(s);
   });
 
-  FB.collection = async function () {
+  let once = null;
+  FB.collection = function () {
+    if (!once) once = connectOnce().catch((e) => { once = null; throw e; });
+    return once;
+  };
+  async function connectOnce() {
     await load(SDK + 'firebase-app-compat.js');
     await Promise.all([load(SDK + 'firebase-auth-compat.js'), load(SDK + 'firebase-firestore-compat.js')]);
-    const app = firebase.initializeApp(cfg);
+    const app = firebase.apps.length ? firebase.app() : firebase.initializeApp(cfg);
     const auth = app.auth();
     const db = app.firestore();
 
@@ -47,7 +52,7 @@
     return {
       col, uid: user.uid, label: 'firebase',
       listen: (next, err) => col.onSnapshot({ includeMetadataChanges: true }, next, err)
-    };
+    }
   };
 
   /* ---------- sign-in gate ---------- */

@@ -51,11 +51,7 @@
           '<label class="select-wrap"><span class="sr">Default type</span><select id="st-deftype" data-pref="defaultType"><option value="">No type</option>' + types.map((t) => '<option value="' + t.id + '"' + (p.defaultType === t.id ? ' selected' : '') + '>' + esc(t.name) + '</option>').join('') + '</select></label></div>')) +
 
       section('Your data', '',
-        '<div class="sync-card ' + (st.mode === 'sync' ? 'on' : '') + '">' + icon(st.mode === 'sync' ? 'cloud' : 'device') +
-        '<div><b>' + (st.mode === 'sync' ? 'Synced to your account' : 'Saved in this browser') + '</b><p>' +
-        (st.mode === 'sync' ? 'Your tasks follow you to any device where you open Cadence. Only you can see them.' : 'Tasks stay on this device. Export a backup to move them somewhere else.') +
-        '</p></div><span class="mono muted">' + st.tasks.length + ' tasks</span></div>' +
-        (C.firebaseSync && C.firebaseSync.user ? '<div class="pref"><span class="pref-l">Signed in as <span class="mono">' + esc(C.firebaseSync.user.email || C.firebaseSync.user.name || 'you') + '</span></span><button type="button" class="btn sm" data-act="signout">Sign out</button></div>' : '') +
+        syncCard(st) +
         '<div class="btn-row">' +
         '<button type="button" class="btn" data-act="export">' + icon('download') + '<span>Export backup</span></button>' +
         '<label class="btn" for="st-import">' + icon('upload') + '<span>Import backup</span></label><input id="st-import" type="file" accept="application/json,.json" class="sr">' +
@@ -73,6 +69,33 @@
       section('Keyboard shortcuts', '',
         '<dl class="keys">' + [['N', 'New task'], ['/', 'Search tasks'], ['⌘K / Ctrl K', 'Command menu'], ['1 · 2 · 3', 'Tasks · Calendar · Settings'], ['← →', 'Previous / next on the calendar'], ['T', 'Jump to today'], ['D', 'Cycle light / dark'], ['X', 'Complete the focused task'], ['⌘↵', 'Save in the editor']].map(([k, v]) => '<div><dt>' + k.split(' ').map((x) => /^[·/]$/.test(x) && k.length > 2 ? '<span class="muted">' + x + '</span>' : '<kbd>' + x + '</kbd>').join('') + '</dt><dd>' + v + '</dd></div>').join('') + '</dl>') +
 
+      '</div>';
+  }
+
+  function syncCard(st) {
+    const sy = st.sync, fb = C.firebaseSync;
+    const head = {
+      local: ['Saved in this browser', fb && fb.enabled ? 'Not connected to your account. Press Retry to connect.' : 'Tasks stay on this device. Export a backup to move them somewhere else.'],
+      connecting: ['Connecting…', 'Reaching your account.'],
+      synced: ['Synced to your account', 'Your tasks follow you to every device you sign in on. Only you can see them.'],
+      saving: ['Saving changes…', sy.pending + ' change' + (sy.pending === 1 ? '' : 's') + ' on the way.'],
+      offline: ['Offline', 'Changes are kept on this device and sent when you’re back online.'],
+      error: ['Sync isn’t working', 'Your changes are safe on this device. Fix the problem below, then press Retry.']
+    }[sy.status] || ['Saved in this browser', ''];
+    const rows = [];
+    if (sy.provider) rows.push(['Service', sy.provider === 'firebase' ? 'Firebase' + (fb && fb.projectId ? ' · <span class="mono">' + esc(fb.projectId) + '</span>' : '') : 'Claude account']);
+    if (fb && fb.user) rows.push(['Signed in as', '<span class="mono">' + esc(fb.user.email || fb.user.name || 'you') + '</span>']);
+    if (sy.provider) rows.push(['Last synced', esc(C.ago(sy.lastAt))]);
+    rows.push(['Tasks', '<span class="mono">' + st.tasks.length + '</span>']);
+    const err = sy.status === 'error' && sy.error;
+    return '<div class="sync-card s-' + sy.status + '" id="st-sync">' +
+      '<div class="sync-top">' + C.syncPill() + '<span class="spacer"></span>' +
+      (sy.provider || (fb && fb.enabled) ? '<button type="button" class="btn sm" data-act="retry"' + (sy.status === 'connecting' ? ' disabled' : '') + '>' + icon('repeat') + '<span>Retry sync</span></button>' : '') +
+      (fb && fb.user ? '<button type="button" class="btn sm ghost" data-act="signout">Sign out</button>' : '') + '</div>' +
+      '<div><b>' + head[0] + '</b><p>' + head[1] + '</p></div>' +
+      (err ? '<div class="sync-err" role="alert"><b>' + esc(err.title) + '</b><p>' + esc(err.hint) + '</p>' +
+        '<p class="mono sync-raw">' + esc(err.code) + (err.doc ? ' · ' + esc(err.doc) : '') + (err.raw && err.raw !== err.hint ? ' · ' + esc(err.raw) : '') + '</p></div>' : '') +
+      '<dl class="sync-facts">' + rows.map(([k, v]) => '<div><dt>' + k + '</dt><dd>' + v + '</dd></div>').join('') + '</dl>' +
       '</div>';
   }
 
@@ -169,6 +192,7 @@
     }
     const act = d.act;
     if (act === 'signout') return C.firebaseSync.signOut();
+    if (act === 'retry') { const ok = await S().retrySync(); ui.force = true; render(); return C.toast(ok ? 'Reconnected. Sending your changes now.' : 'Still can’t connect. See the details under Your data.'); }
     if (act === 'export') return exportData();
     if (act === 'copy') return copyData();
     if (act === 'samples') { S().loadSamples(); return C.toast('Added example tasks. Clear them any time from the Tasks page.'); }

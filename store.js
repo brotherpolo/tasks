@@ -28,6 +28,7 @@
   const state = {
     tasks: [], types: [], levels: [], prefs: { ...DEFAULT_PREFS },
     mode: 'local', // 'local' | 'sync'
+    sync: { status: 'local', provider: null, lastAt: null, pending: 0, error: null },
     ready: false
   };
   const listeners = new Set();
@@ -43,10 +44,51 @@
     } catch (e) { /* storage blocked: in-memory only */ }
   }, 120);
 
-  /* ---------- remote sync (claude.ai db capability) ---------- */
+  /* ---------- remote sync (Firebase or claude.ai db) ----------
+     state.sync = { status, provider, lastAt, pending, error }
+       status: 'local' | 'connecting' | 'synced' | 'saving' | 'offline' | 'error'          */
   let remote = null; // { col }
+  let conn = null;   // the provider result, kept so Retry can re-listen
+  let unlisten = null;
   const queues = {};
+  const failed = new Set();
   const settingsBody = () => ({ kind: 'settings', types: state.types, levels: state.levels, defaultLevel: state.prefs.defaultLevel, defaultType: state.prefs.defaultType });
+
+  function setSync(patch) {
+    Object.assign(state.sync, patch);
+    state.mode = remote ? 'sync' : 'local';
+    emit();
+  }
+  const pendingCount = () => Object.values(queues).filter((q) => q.busy || q.dirty).length;
+  function refreshStatus() {
+    if (!remote) return;
+    if (state.sync.status === 'error' && failed.size) return; // keep the error visible until Retry
+    const n = pendingCount();
+    if (!navigator.onLine) return setSync({ status: 'offline', pending: n });
+    if (n) return setSync({ status: 'saving', pending: n });
+    setSync({ status: 'synced', pending: 0, lastAt: Date.now(), error: null });
+  }
+
+  /** Turn an SDK error into words a person can act on */
+  function explain(err, during) {
+    const code = (err && err.code) || 'unknown';
+    const raw = (err && err.message) || String(err || '');
+    const fb = state.sync.provider === 'firebase';
+    const m = {
+      'permission-denied': ['The database refused ' + (during === 'write' ? 'to save a change' : 'access'),
+        fb ? 'Deploy the security rules (firebase deploy --only firestore:rules) and check they appear under Firestore Database → Rules in the console. If the message mentions "API has not been used", enable the Cloud Firestore API for this project.' : 'Your access to this page changed.'],
+      'not-found': ['No Firestore database found', 'In the Firebase console open Firestore Database → Create database, then press Retry.'],
+      'failed-precondition': ['Firestore isn’t ready', 'Create the Firestore database in the Firebase console (Firestore Database → Create database), then press Retry.'],
+      'unauthenticated': ['You’re signed out', 'Reload the page and sign in again.'],
+      'unavailable': ['Can’t reach the database', 'Check your connection. Changes stay on this device and are sent when you’re back online. Ad blockers and privacy extensions sometimes block firestore.googleapis.com.'],
+      'resource-exhausted': ['Database quota reached', 'Your Firebase project hit a usage limit. Check Usage in the Firebase console.'],
+      'invalid-argument': ['A change was rejected', 'One task has data the database won’t accept. Export a backup and send it to whoever maintains the app.'],
+      'timeout': ['No answer from the database', 'Nothing came back after 12 seconds. Make sure the Firestore database exists and that an ad blocker isn’t blocking firestore.googleapis.com, then press Retry.'],
+      'quota_exceeded': ['Storage is full', 'Delete some completed tasks to keep syncing.'],
+      'sdk': ['Couldn’t load sync', raw]
+    }[code] || ['Sync stopped', raw || 'Unknown error'];
+    return { code, title: m[0], hint: m[1], raw, at: Date.now() };
+  }
 
   function queueWrite(id) {
     if (!remote) return;
@@ -56,6 +98,7 @@
   }
   async function pump(id, q) {
     q.busy = true;
+    refreshStatus();
     while (q.dirty && remote) {
       q.dirty = false;
       const body = id === 'settings' ? settingsBody() : state.tasks.find((t) => t.id === id);
@@ -63,25 +106,28 @@
         try {
           const ref = remote.col.doc(id);
           if (body) await ref.set(C.clone(body)); else await ref.delete();
+          failed.delete(id);
           break;
         } catch (e) {
           const code = e && e.code;
           if (code === 'unavailable' && attempt === 0) { await new Promise((r) => setTimeout(r, 600 + Math.random() * 900)); continue; }
-          if (code === 'quota_exceeded') C.toast && C.toast('Storage is full. Delete some completed tasks to keep syncing.');
-          else if (code === 'permission-denied' || code === 'unauthenticated') { C.toast && C.toast('Sync was refused by the server rules. Changes are kept on this device.'); goLocal(); }
-          else if (code === 'invalid_argument' || code === 'invalid-argument' || code === 'revoked' || code === 'not_granted' || code === 'capability_disabled') goLocal();
+          console.warn('Sync write failed for', id, e);
+          failed.add(id);
+          if (code === 'revoked' || code === 'not_granted' || code === 'capability_disabled') { goLocal(explain(e, 'write')); }
+          else setSync({ status: 'error', error: Object.assign(explain(e, 'write'), { doc: id }) });
           break;
         }
       }
     }
     q.busy = false;
+    refreshStatus();
   }
   const pending = (id) => queues[id] && (queues[id].busy || queues[id].dirty);
 
-  function goLocal() {
+  function goLocal(error) {
     remote = null;
-    state.mode = 'local';
-    emit();
+    if (unlisten) { try { unlisten(); } catch (e) { /* already closed */ } unlisten = null; }
+    setSync({ status: error ? 'error' : 'local', error: error || null, pending: 0 });
   }
 
   function applySnapshot(snap) {
@@ -100,13 +146,15 @@
         return;
       }
       seen.add(d.id);
-      if (pending(d.id)) { const local = state.tasks.find((t) => t.id === d.id); if (local) tasks.push(local); return; }
+      if (pending(d.id) || failed.has(d.id)) { const local = state.tasks.find((t) => t.id === d.id); if (local) tasks.push(local); return; }
       tasks.push(C.clone(body));
     });
-    // keep local tasks whose create hasn't landed yet
-    state.tasks.forEach((t) => { if (!seen.has(t.id) && pending(t.id)) tasks.push(t); });
+    // keep local tasks whose create hasn't landed yet (or was refused, so nothing is lost)
+    state.tasks.forEach((t) => { if (!seen.has(t.id) && (pending(t.id) || failed.has(t.id))) tasks.push(t); });
     state.tasks = tasks;
+    if (snap.metadata && !snap.metadata.fromCache) state.sync.lastAt = Date.now();
     writeLocal();
+    refreshStatus();
     emit();
   }
 
@@ -115,48 +163,66 @@
     state.tasks.forEach((t) => queueWrite(t.id));
   }
 
-  /* A provider resolves { col, uid, label } or null. Both backends expose the same
+  /* A provider resolves { col, uid, label, listen? } or null. Both backends expose the same
      collection shape: doc(id).set/delete and onSnapshot(snap => snap.docs / empty / metadata). */
   async function provider() {
+    if (conn) return conn;
     // 1) Firebase (self-hosted, signed-in users) — see firebase-config.js
-    if (C.firebaseSync && C.firebaseSync.enabled) return C.firebaseSync.collection();
+    if (C.firebaseSync && C.firebaseSync.enabled) {
+      setSync({ status: 'connecting', provider: 'firebase' });
+      return (conn = await C.firebaseSync.collection());
+    }
     // 2) claude.ai artifact db capability
     const cl = window.claude;
     if (!cl || typeof cl.use !== 'function') return null;
+    setSync({ status: 'connecting', provider: 'claude' });
     const [db, user] = await Promise.all([cl.use('db'), cl.use('user')]);
-    if (!db || !user) return null;
+    if (!db || !user) { setSync({ status: 'local', provider: null }); return null; }
     const uid = await user.id();
-    if (!uid) return null;
-    return { col: db.collection('data/users/' + uid), uid, label: 'account' };
+    if (!uid) { setSync({ status: 'local', provider: null }); return null; }
+    return (conn = { col: db.collection('data/users/' + uid), uid, label: 'claude' });
   }
 
   /** Resolves { status: 'remote-empty' | 'remote-data', uid } or null (no sync available) */
   async function connect() {
     let p = null;
-    try { p = await provider(); } catch (e) { console.warn('Sync unavailable:', e); C.toast && C.toast(e.message || 'Sync is unavailable. Working on this device only.'); }
+    try { p = await provider(); }
+    catch (e) { console.warn('Sync unavailable:', e); goLocal(explain({ code: 'sdk', message: e.message }, 'connect')); return null; }
     if (!p) return null;
+    setSync({ status: 'connecting', error: null });
     return new Promise((resolve) => {
       let settled = false;
       const done = (v) => { if (!settled) { settled = true; resolve(v); } };
-      setTimeout(() => done(null), 12000);
+      const timer = setTimeout(() => { if (first) { setSync({ status: 'error', error: explain({ code: 'timeout' }) }); done(null); } }, 12000);
       let first = true;
       const listen = p.listen || ((next, err) => p.col.onSnapshot(next, err));
-      listen((snap) => {
+      if (unlisten) { try { unlisten(); } catch (e) { /* closed */ } }
+      unlisten = listen((snap) => {
         if (first) {
-          if (snap.metadata && snap.metadata.fromCache) return; // wait for server truth
+          if (snap.metadata && snap.metadata.fromCache && navigator.onLine) return; // wait for server truth
           first = false;
+          clearTimeout(timer);
           remote = { col: p.col };
-          state.mode = 'sync';
           state.syncLabel = p.label;
           state.owner = p.uid;
-          if (snap.empty) return done({ status: 'remote-empty', uid: p.uid });
+          const wasLate = settled; // answered after the timeout: push what we have
+          if (snap.empty) { if (wasLate) pushAll(); refreshStatus(); return done({ status: 'remote-empty', uid: p.uid }); }
           applySnapshot(snap);
+          if (wasLate) pushAll();
           return done({ status: 'remote-data', uid: p.uid });
         }
         applySnapshot(snap);
-      }, (err) => { console.warn('Sync stopped:', err); if (first) done(null); goLocal(); });
+      }, (err) => {
+        console.warn('Sync stopped:', err);
+        clearTimeout(timer);
+        goLocal(explain(err, 'read'));
+        done(null);
+      });
     });
   }
+
+  window.addEventListener('online', () => { if (remote) { failed.forEach(queueWrite); refreshStatus(); } });
+  window.addEventListener('offline', () => refreshStatus());
 
   /* ---------- sample data (clearly marked as examples) ---------- */
   function sampleTasks() {
@@ -213,6 +279,19 @@
       state.ready = true;
       writeLocal();
       emit();
+    },
+
+    /** Retry: reconnect if the listener died, then resend everything (writes are idempotent) */
+    async retrySync() {
+      failed.clear();
+      setSync({ status: 'connecting', error: null });
+      if (!remote) {
+        const res = await connect();
+        if (!res) return false;
+      }
+      pushAll();
+      refreshStatus();
+      return true;
     },
 
     typeById(id) { return state.types.find((t) => t.id === id) || null; },

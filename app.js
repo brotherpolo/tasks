@@ -97,11 +97,11 @@
         (n.id === 'list' && c.list ? '<span class="count mono" title="Due today or overdue">' + c.list + '</span>' : '') + '</a>').join('') + '</nav>' +
       sideTypes(st) + sideLevels(st) +
       '<div class="side-foot">' +
-      '<span class="sync-pill ' + (st.mode === 'sync' ? 'on' : '') + '" title="' + (st.mode === 'sync' ? 'Synced to your account' : 'Saved in this browser') + '">' + icon(st.mode === 'sync' ? 'cloud' : 'device') + (st.mode === 'sync' ? 'Synced' : 'On this device') + '</span>' +
+      C.syncPill() +
       '<button type="button" class="icon-btn" data-theme-toggle aria-label="Toggle dark mode">' + icon(isDark() ? 'sun' : 'moon') + '</button></div>';
 
     document.getElementById('topbar').innerHTML =
-      '<div class="brand">' + LOGO + '<span class="brand-name">Cadence</span></div><span class="spacer"></span>' +
+      '<div class="brand">' + LOGO + '<span class="brand-name">Cadence</span></div><span class="spacer"></span>' + C.syncPill(true) +
       '<button type="button" class="icon-btn" data-theme-toggle aria-label="Toggle dark mode">' + icon(isDark() ? 'sun' : 'moon') + '</button>';
 
     document.getElementById('tabbar').innerHTML =
@@ -134,6 +134,34 @@
   }
   C.refreshChrome = () => renderChrome();
 
+  /* ---------- sync status pill ---------- */
+  const SYNC = {
+    local: ['device', 'On this device', 'Tasks are saved in this browser only.'],
+    connecting: ['cloud', 'Connecting…', 'Connecting to your account…'],
+    synced: ['cloud', 'Synced', 'All changes are saved to your account.'],
+    saving: ['cloud', 'Saving…', 'Sending changes to your account…'],
+    offline: ['cloud', 'Offline', 'You’re offline. Changes are kept here and sent when you reconnect.'],
+    error: ['cloud', 'Sync error', 'Sync stopped. Tap for details.']
+  };
+  C.ago = function (t) {
+    if (!t) return 'never';
+    const s = Math.round((Date.now() - t) / 1000);
+    if (s < 10) return 'just now';
+    if (s < 60) return s + 's ago';
+    if (s < 3600) return Math.round(s / 60) + ' min ago';
+    return C.F.time.format(new Date(t));
+  };
+  C.syncPill = function (compact) {
+    const sy = S.state.sync;
+    const [ic, label, tip] = SYNC[sy.status] || SYNC.local;
+    const title = sy.status === 'error' && sy.error ? sy.error.title + '. ' + 'Tap for details.'
+      : sy.status === 'synced' ? tip + ' Last synced ' + C.ago(sy.lastAt) + '.' : tip;
+    return '<button type="button" class="sync-pill s-' + sy.status + (compact ? ' compact' : '') + '" data-sync-pill title="' + esc(title) + '" aria-label="Sync status: ' + esc(label) + '. Open sync details">' +
+      '<span class="sync-dot" aria-hidden="true"></span>' + icon(ic) + '<span class="sync-label">' + label + '</span></button>';
+  };
+  // keep "last synced" tooltips fresh
+  setInterval(() => document.querySelectorAll('[data-sync-pill]').forEach((b) => { b.outerHTML = C.syncPill(b.classList.contains('compact')); }), 30000);
+
   function tab(id, label, ic, n) {
     return '<a href="#' + id + '" class="tab' + (current === id ? ' on' : '') + '"' + (current === id ? ' aria-current="page"' : '') + '>' +
       '<span class="tab-ic">' + icon(ic) + (n ? '<span class="tab-badge mono">' + n + '</span>' : '') + '</span><span>' + label + '</span></a>';
@@ -161,6 +189,10 @@
   document.addEventListener('click', (e) => {
     if (e.target.closest('[data-new]') && !e.target.closest('#view')) { e.preventDefault(); C.openEditor(); }
     else if (e.target.closest('[data-pal]')) C.openPalette();
+    else if (e.target.closest('[data-sync-pill]')) {
+      const reveal = () => { const c = document.getElementById('st-sync'); if (c) { c.scrollIntoView({ behavior: 'smooth', block: 'center' }); c.classList.add('flash-card'); setTimeout(() => c.classList.remove('flash-card'), 1200); } };
+      if (current !== 'settings') { C.go('settings'); setTimeout(reveal, 350); } else reveal();
+    }
     else if (e.target.closest('[data-side-type]')) {
       C.views.list.filterType(e.target.closest('[data-side-type]').dataset.sideType);
       if (current !== 'list') C.go('list'); else window.scrollTo({ top: 0, behavior: 'smooth' });
