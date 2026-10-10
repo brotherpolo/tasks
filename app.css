@@ -603,6 +603,20 @@ button.mix-key:hover { color: var(--ink); }
 .sub .icon-btn { opacity: 0; }
 .sub:hover .icon-btn, .sub:focus-within .icon-btn { opacity: 1; }
 @media (hover: none) { .sub .icon-btn { opacity: .7; } }
+.sub-add-btn { flex: none; }
+.sub-input:placeholder-shown + .sub-add-btn { opacity: .55; }
+.sub-tip { margin: 6px 0 0 34px; font-size: var(--fs-xs); }
+/* phones & tablets: bigger tap targets, and 16px text so iOS doesn't zoom in on focus */
+@media (pointer: coarse) {
+  .sub { min-height: 44px; gap: 8px; }
+  .sub-input { height: 42px; font-size: 16px; }
+  .sub .check.sm { width: 26px; height: 26px; }
+  .sub .icon-btn.sm { width: 38px; height: 38px; opacity: .8; }
+  .btn.sm.sub-add-btn { height: 36px; padding-inline: 14px; }
+  .sub-plus { width: 26px; }
+  .sub-tip { margin-left: 36px; }
+}
+@media (pointer: fine) { .sub-tip { display: none; } }
 
 /* ---------- command palette ---------- */
 .pal-wrap { align-items: flex-start; padding: max(10vh, 16px) 16px 16px; }

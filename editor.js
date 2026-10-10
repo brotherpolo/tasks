@@ -78,9 +78,11 @@
 
         '<div class="field"><span class="field-label">Checklist <span class="muted mono">' + (sub.length ? sub.filter((x) => x.done).length + '/' + sub.length : '') + '</span></span>' +
         '<ul class="subs">' + sub.map((x, i) => '<li class="sub"><button type="button" class="check sm' + (x.done ? ' on' : '') + '" data-sub-toggle="' + i + '" aria-label="Toggle step">' + icon('check') + '</button>' +
-          '<input id="ed-sub-' + x.id + '" class="sub-input' + (x.done ? ' done' : '') + '" value="' + esc(x.title) + '" data-sub-edit="' + i + '" aria-label="Step">' +
+          '<input id="ed-sub-' + x.id + '" class="sub-input' + (x.done ? ' done' : '') + '" value="' + esc(x.title) + '" data-sub-edit="' + i + '" aria-label="Step" enterkeyhint="enter" autocomplete="off">' +
           '<button type="button" class="icon-btn sm" data-sub-del="' + i + '" aria-label="Remove step">' + icon('x') + '</button></li>').join('') +
-        '<li class="sub add"><span class="sub-plus">' + icon('plus') + '</span><input id="ed-sub-new" class="sub-input" placeholder="Add a step, press Enter"></li></ul></div>' +
+        '<li class="sub add"><span class="sub-plus">' + icon('plus') + '</span><input id="ed-sub-new" class="sub-input" placeholder="Add a step" enterkeyhint="enter" autocomplete="off" aria-label="New step">' +
+          '<button type="button" class="btn sm sub-add-btn" data-act="sub-add">Add</button></li></ul>' +
+          '<p class="sub-tip muted">Paste a list to add every line as its own step.</p></div>' +
 
         '<div class="field"><label class="field-label" for="ed-notes">Notes</label><textarea id="ed-notes" rows="3" placeholder="Links, details, context…">' + esc(draft.notes || '') + '</textarea></div>';
       autoGrow(body.querySelector('#ed-title'));
@@ -153,7 +155,53 @@
       draft.time = body.querySelector('#ed-time').value || null;
       draft.repeat = body.querySelector('#ed-repeat').value;
     }
+    /* ---------- checklist helpers ---------- */
+    // "- milk", "• eggs", "1. bread", "[ ] jam" → "milk", "eggs", "bread", "jam"
+    function cleanStep(line) { return line.replace(/^\s*(?:[-*•–—]|\d+[.)]|\[[ xX]?\])\s*/, '').trim(); }
+    function insertSteps(titles, at) {
+      draft.subtasks = draft.subtasks || [];
+      const items = titles.map((t) => ({ id: C.uid('s'), title: t, done: false }));
+      draft.subtasks.splice(at == null ? draft.subtasks.length : at, 0, ...items);
+      return items.length ? items[items.length - 1].id : null;
+    }
+    // id = a step to focus (caret at the end); null = the "Add a step" field
+    function focusStep(id) {
+      const el = body.querySelector(id ? '#ed-sub-' + id : '#ed-sub-new');
+      if (!el) return;
+      el.focus();
+      try { el.setSelectionRange(el.value.length, el.value.length); } catch (err) { /* not supported */ }
+      el.scrollIntoView({ block: 'nearest' });
+    }
+    function addFromNewInput() {
+      const inp = body.querySelector('#ed-sub-new');
+      const v = inp ? inp.value.trim() : '';
+      if (!v) { if (inp) inp.focus(); return; }
+      sync(); insertSteps([v]); render(); focusStep(null);
+    }
+
     render();
+
+    // pasting several lines adds one step per line
+    body.addEventListener('paste', (e) => {
+      const t = e.target;
+      if (t.id !== 'ed-sub-new' && t.dataset.subEdit == null) return;
+      const text = (e.clipboardData || window.clipboardData).getData('text') || '';
+      const lines = text.split(/\r?\n/).map(cleanStep).filter(Boolean);
+      if (lines.length < 2) return; // a single line pastes normally
+      e.preventDefault(); sync();
+      if (t.id === 'ed-sub-new') {
+        const pre = t.value.trim();
+        if (pre) lines[0] = pre + ' ' + lines[0];
+        insertSteps(lines); render(); focusStep(null);
+      } else {
+        const i = +t.dataset.subEdit, cur = draft.subtasks[i];
+        if (!cur.title.trim()) cur.title = lines.shift(); // fill an empty step first
+        const id = insertSteps(lines, i + 1) || cur.id;
+        render(); focusStep(id);
+      }
+    });
+    // keep the keyboard open when tapping Add
+    wrap.addEventListener('mousedown', (e) => { if (e.target.closest('[data-act="sub-add"]')) e.preventDefault(); });
 
     body.addEventListener('input', (e) => {
       if (e.target.id === 'ed-assign') assignQuery = e.target.value;
@@ -165,13 +213,20 @@
     });
     body.addEventListener('keydown', (e) => {
       if (e.target.id === 'ed-assign' && e.key === 'Enter') { e.preventDefault(); findAssignee(); return; }
-      if (e.target.id === 'ed-sub-new' && e.key === 'Enter') {
-        e.preventDefault();
-        const v = e.target.value.trim(); if (!v) return;
-        sync();
-        draft.subtasks = (draft.subtasks || []).concat({ id: C.uid('s'), title: v, done: false });
-        render();
-        body.querySelector('#ed-sub-new').focus();
+      const isEnter = (e.key === 'Enter' || e.keyCode === 13) && !e.isComposing;
+      if (e.target.id === 'ed-sub-new' && isEnter) { e.preventDefault(); addFromNewInput(); return; }
+      if (e.target.dataset.subEdit != null) {
+        const i = +e.target.dataset.subEdit;
+        // Enter in a step starts a new step right below it, like a notes app
+        if (isEnter) { e.preventDefault(); sync(); const id = insertSteps([''], i + 1); render(); focusStep(id); return; }
+        // Backspace in an empty step removes it and moves up
+        if (e.key === 'Backspace' && !e.target.value) {
+          e.preventDefault(); sync();
+          draft.subtasks.splice(i, 1);
+          const prev = draft.subtasks[i - 1];
+          render(); focusStep(prev ? prev.id : null);
+          return;
+        }
       }
       if (e.target.id === 'ed-title' && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); }
     });
@@ -189,6 +244,7 @@
         return;
       }
       if (b.dataset.act === 'find') { findAssignee(); return; }
+      if (b.dataset.act === 'sub-add') { addFromNewInput(); return; }
       if (b.dataset.act === 'handback') {
         if (!confirmBack) { confirmBack = true; b.querySelector('span').textContent = 'Hand back to ' + C.firstName(existing.ownerName, existing.ownerEmail) + '?'; b.classList.add('danger'); return; }
         close(true); C.handBack(existing.id); return;
