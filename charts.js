@@ -1,4 +1,4 @@
-/* Cadence — Chart builder: drag fields onto X axis / Values / Split by and pick a chart type.
+/* Cadence — Chart builder + Board: drag fields onto X axis / Values / Split by and pick a chart type.
    Works with mouse, pen and touch. On touch you can also tap a field, then tap where it goes.
    Saved charts live on a board in this browser (localStorage), not in the cloud. */
 (function () {
@@ -180,7 +180,7 @@
       key: sk, label: sd ? sk : Y.label, color: sd ? colorFor(sd, sk, i) : 'var(--accent)',
       values: xKeys.map((xk) => aggregate(raw.filter((r) => r.x === xk && r.s === sk).map((r) => r.v), cfg.agg))
     }));
-    return { cats, series, grain, n: list.length, colorByCat: !sd && !xd.time && !!xd.color };
+    return { cats, series, grain, n: list.length, colorByCat: !sd && !xd.time && !!xd.color, raw };
   }
   function orderKeys(d, keys) {
     if (!d.order) return keys.sort((a, b) => String(a).localeCompare(String(b)));
@@ -253,9 +253,7 @@
       '</section>' +
       '<div class="cb-presets"><span class="muted">Try one:</span>' + PRESETS.map((p, i) => '<button type="button" class="chip" data-preset="' + i + '">' + esc(p.name) + '</button>').join('') + '</div>' +
       '</div></div>' +
-      // board
-      '<section class="cb-board"><header class="cb-board-head"><h2 class="cb-h2">Your board</h2><span class="muted">' + (board.length ? board.length + ' saved · kept in this browser' : 'Saved charts appear here. They’re kept in this browser.') + '</span></header>' +
-      (board.length ? '<div class="cb-grid">' + board.map(boardCard).join('') + '</div>' : '') + '</section>';
+      '<a href="#board" class="cb-boardlink st-sec">' + icon('board') + '<span><b>Your board</b><span class="muted">' + (board.length ? board.length + ' saved chart' + (board.length === 1 ? '' : 's') + ' · tap a bar or slice there to see its tasks' : 'Charts you save show up on your board.') + '</span></span>' + icon('chevR') + '</a>';
     if (ui.flash) { const z = root.querySelector('[data-zone="' + ui.flashZone + '"]'); if (z) z.classList.add('nope'); }
   }
 
@@ -282,26 +280,15 @@
     if (cfg.type === 'pie' || cfg.type === 'donut' || b.colorByCat) return b.cats.slice(0, 12).map((c) => '<span><i class="lg-bar" style="--c:' + c.color + '"></i>' + esc(c.label) + '</span>').join('');
     return b.series.length > 1 ? b.series.map((s) => '<span><i class="lg-bar" style="--c:' + s.color + '"></i>' + esc(s.label) + '</span>').join('') : '';
   }
-  function boardCard(item) {
-    const saved = cfg;
-    cfg = Object.assign({}, BLANK, item);
-    const html = '<article class="st-sec cb-card' + (saved.id === item.id ? ' editing' : '') + '"><header class="cb-card-head"><h3>' + esc(item.title || autoTitle()) + '</h3>' +
-      '<div class="cb-card-btns"><button type="button" class="icon-btn sm" data-edit="' + item.id + '" aria-label="Edit chart">' + icon('settings') + '</button>' +
-      '<button type="button" class="icon-btn sm" data-del="' + item.id + '" aria-label="Remove chart">' + icon('trash') + '</button></div></header>' +
-      '<div class="cb-plot mini">' + plot(true) + '</div></article>';
-    cfg = saved;
-    return html;
-  }
-
   /* ---------- drawing ---------- */
   const tip = (s) => ' data-tip="' + esc(s) + '"';
-  function plot(mini) {
+  function plot(mini, size) {
     const p = problem();
     if (p) return '<div class="cb-empty">' + typeSvg(TYPES.find((t) => t[0] === cfg.type)[2]) + '<p>' + esc(p) + '</p></div>';
     const b = build();
     if (!b.n) return '<div class="cb-empty"><p>No tasks match these filters.</p></div>';
     const narrow = !mini && matchMedia('(max-width: 640px)').matches;
-    const W = mini ? 420 : narrow ? 360 : 680, H = mini ? 240 : narrow ? 280 : 360;
+    const W = size ? size.W : mini ? 420 : narrow ? 360 : 680, H = size ? size.H : mini ? 240 : narrow ? 280 : 360;
     if (cfg.type === 'scatter') return scatter(b, W, H, mini);
     if (!b.cats.length) return '<div class="cb-empty"><p>No values to show with these fields and filters.</p></div>';
     if (cfg.type === 'pie' || cfg.type === 'donut') return pie(b, W, H, mini);
@@ -333,6 +320,8 @@
   }
   const valTip = (cat, s, v, multi) => cat + (multi ? ' · ' + s : '') + ': ' + fmt(v, NUMS[cfg.y].unit) + (cfg.y === 'count' ? (v === 1 ? ' task' : ' tasks') : '');
 
+  // a full-height hit area per category, so thin bars are still easy to tap (opens every task in that category)
+  const catTotal = (b, i) => { const n = b.raw.filter((r) => r.x === b.cats[i].key).length; return b.cats[i].label + ': ' + n + (n === 1 ? ' task' : ' tasks'); };
   /* columns, lines, areas */
   function xy(b, W, H, mini) {
     const unit = NUMS[cfg.y].unit, multi = b.series.length > 1;
@@ -354,6 +343,7 @@
       const groupW = Math.min(cw * 0.78, multi && !stacked ? 18 * b.series.length + 10 : 48);
       b.cats.forEach((c, i) => {
         const x0 = L + cw * i + (cw - groupW) / 2;
+        s += '<rect class="hit" x="' + (L + cw * i).toFixed(1) + '" y="' + T + '" width="' + cw.toFixed(1) + '" height="' + (H - T - B) + '" data-seg="' + i + ':*"' + tip(catTotal(b, i)) + '/>';
         let pos = 0, neg = 0;
         b.series.forEach((ser, j) => {
           const v = ser.values[i]; if (v == null || v === 0) return;
@@ -361,7 +351,7 @@
           let top, bot, x, w;
           if (stacked) { if (v >= 0) { bot = pos; pos += v; top = pos; } else { top = neg; neg += v; bot = neg; } x = x0; w = groupW; }
           else { top = Math.max(v, 0); bot = Math.min(v, 0); w = groupW / b.series.length; x = x0 + w * j; w = Math.max(2, w - (multi ? 2 : 0)); }
-          s += '<rect class="cb-bar" x="' + x.toFixed(1) + '" y="' + y(top).toFixed(1) + '" width="' + w.toFixed(1) + '" height="' + Math.max(1, y(bot) - y(top)).toFixed(1) + '" rx="' + Math.min(4, w / 4) + '" style="--c:' + col + '" tabindex="0"' + tip(valTip(c.label, ser.label, v, multi)) + '/>';
+          s += '<rect class="cb-bar" x="' + x.toFixed(1) + '" y="' + y(top).toFixed(1) + '" width="' + w.toFixed(1) + '" height="' + Math.max(1, y(bot) - y(top)).toFixed(1) + '" rx="' + Math.min(4, w / 4) + '" style="--c:' + col + '" tabindex="0" data-seg="' + i + ':' + j + '"' + tip(valTip(c.label, ser.label, v, multi)) + '/>';
         });
       });
     } else {
@@ -388,9 +378,9 @@
           s += '<polyline points="' + line + '" class="cb-line" style="--c:' + ser.color + '"/>';
         });
       });
-      layers.forEach(({ ser, pts }) => pts.forEach((p) => {
+      layers.forEach(({ ser, pts }, j) => pts.forEach((p) => {
         if (!p) return;
-        s += '<circle cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="' + (n > 30 ? 2.5 : 4) + '" class="cb-dot" style="--c:' + ser.color + '" tabindex="0"' + tip(valTip(b.cats[p.i].label, ser.label, ser.values[p.i], multi)) + '/>';
+        s += '<circle cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="' + (n > 30 ? 2.5 : 4) + '" class="cb-dot" style="--c:' + ser.color + '" tabindex="0" data-seg="' + p.i + ':' + j + '"' + tip(valTip(b.cats[p.i].label, ser.label, ser.values[p.i], multi)) + '/>';
       }));
     }
     return s + '</svg>';
@@ -410,6 +400,7 @@
     const rh = (H - T - B) / n;
     b.cats.forEach((c, i) => {
       const y0 = T + rh * i, bh = Math.min(rh * 0.7, multi && !stacked ? 9 * b.series.length + 4 : 26), yy = y0 + (rh - bh) / 2;
+      s += '<rect class="hit" x="0" y="' + y0.toFixed(1) + '" width="' + W + '" height="' + rh.toFixed(1) + '" data-seg="' + i + ':*"' + tip(catTotal(b, i)) + '/>';
       const lab = c.label.length > 16 ? c.label.slice(0, 15) + '…' : c.label;
       s += '<text x="' + (L - 8) + '" y="' + (y0 + rh / 2 + 4) + '" class="ax lab" text-anchor="end">' + esc(lab) + '</text>';
       let pos = 0, neg = 0, total = 0;
@@ -420,7 +411,7 @@
         let a, z, yy2 = yy, h = bh;
         if (stacked) { if (v >= 0) { a = pos; pos += v; z = pos; } else { z = neg; neg += v; a = neg; } }
         else { a = Math.min(v, 0); z = Math.max(v, 0); h = bh / b.series.length; yy2 = yy + h * j; h = Math.max(2, h - (multi ? 1.5 : 0)); }
-        s += '<rect class="cb-bar" y="' + yy2.toFixed(1) + '" x="' + x(a).toFixed(1) + '" height="' + h.toFixed(1) + '" width="' + Math.max(1, x(z) - x(a)).toFixed(1) + '" rx="' + Math.min(4, h / 4) + '" style="--c:' + col + '" tabindex="0"' + tip(valTip(c.label, ser.label, v, multi)) + '/>';
+        s += '<rect class="cb-bar" y="' + yy2.toFixed(1) + '" x="' + x(a).toFixed(1) + '" height="' + h.toFixed(1) + '" width="' + Math.max(1, x(z) - x(a)).toFixed(1) + '" rx="' + Math.min(4, h / 4) + '" style="--c:' + col + '" tabindex="0" data-seg="' + i + ':' + j + '"' + tip(valTip(c.label, ser.label, v, multi)) + '/>';
       });
       if (!multi || stacked) { const v = stacked ? total : b.series[0].values[i]; if (v != null) s += '<text x="' + (x(Math.max(stacked ? pos : v, 0)) + 5) + '" y="' + (yy + bh / 2 + 4) + '" class="ax val">' + fmt(v, unit) + '</text>'; }
     });
@@ -429,20 +420,20 @@
 
   /* pies & donuts */
   function pie(b, W, H, mini) {
-    const vals = b.cats.map((c, i) => ({ c, v: Math.max(0, b.series[0].values[i] || 0) })).filter((x) => x.v > 0);
+    const vals = b.cats.map((c, i) => ({ c, i, v: Math.max(0, b.series[0].values[i] || 0) })).filter((x) => x.v > 0);
     const total = vals.reduce((a, x) => a + x.v, 0);
     if (!total) return '<div class="cb-empty"><p>Nothing to slice: every value is zero.</p></div>';
     const r = Math.min(W, H) / 2 - 12, cx = W / 2, cy = H / 2, ir = cfg.type === 'donut' ? r * 0.58 : 0;
     let a0 = -Math.PI / 2, s = svgOpen(W, H, autoTitle());
     const pt = (a, rr) => (cx + rr * Math.cos(a)).toFixed(2) + ' ' + (cy + rr * Math.sin(a)).toFixed(2);
-    vals.forEach(({ c, v }) => {
+    vals.forEach(({ c, v, i }) => {
       const frac = v / total, a1 = a0 + frac * Math.PI * 2, big = frac > 0.5 ? 1 : 0;
       const label = c.label + ': ' + fmt(v, NUMS[cfg.y].unit) + ' (' + Math.round(frac * 100) + '%)';
       let d;
       if (frac >= 0.9999) d = ir ? 'M' + pt(0, r) + 'A' + r + ' ' + r + ' 0 1 1 ' + pt(Math.PI, r) + 'A' + r + ' ' + r + ' 0 1 1 ' + pt(0, r) + 'M' + pt(0, ir) + 'A' + ir + ' ' + ir + ' 0 1 0 ' + pt(Math.PI, ir) + 'A' + ir + ' ' + ir + ' 0 1 0 ' + pt(0, ir) + 'Z'
         : 'M' + pt(0, r) + 'A' + r + ' ' + r + ' 0 1 1 ' + pt(Math.PI, r) + 'A' + r + ' ' + r + ' 0 1 1 ' + pt(0, r) + 'Z';
       else d = 'M' + pt(a0, r) + 'A' + r + ' ' + r + ' 0 ' + big + ' 1 ' + pt(a1, r) + (ir ? 'L' + pt(a1, ir) + 'A' + ir + ' ' + ir + ' 0 ' + big + ' 0 ' + pt(a0, ir) : 'L' + cx + ' ' + cy) + 'Z';
-      s += '<path d="' + d + '" class="cb-slice" fill-rule="evenodd" style="--c:' + c.color + '" tabindex="0"' + tip(label) + '/>';
+      s += '<path d="' + d + '" class="cb-slice" fill-rule="evenodd" style="--c:' + c.color + '" tabindex="0" data-seg="' + i + ':0"' + tip(label) + '/>';
       if (frac > 0.07 && !mini) {
         const mid = (a0 + a1) / 2, lr = ir ? (r + ir) / 2 : r * 0.62;
         s += '<text x="' + (cx + lr * Math.cos(mid)) + '" y="' + (cy + lr * Math.sin(mid) + 4) + '" class="cb-slice-lab" text-anchor="middle">' + Math.round(frac * 100) + '%</text>';
@@ -467,8 +458,8 @@
     s += '<text x="' + (L + (W - L - R) / 2) + '" y="' + (H - 4) + '" class="ax lab" text-anchor="middle">' + esc(X.label) + ' →</text>';
     // a little jitter so tasks with identical values don't hide each other
     let seed = 1; const jit = () => { seed = (seed * 9301 + 49297) % 233280; return (seed / 233280 - 0.5) * 6; };
-    b.points.forEach((p) => {
-      s += '<circle cx="' + (x(p.x) + jit()).toFixed(1) + '" cy="' + (y(p.y) + jit()).toFixed(1) + '" r="' + (mini ? 3.5 : 5) + '" class="cb-pt" style="--c:' + b.colors[p.s] + '" tabindex="0"' +
+    b.points.forEach((p, k) => {
+      s += '<circle cx="' + (x(p.x) + jit()).toFixed(1) + '" cy="' + (y(p.y) + jit()).toFixed(1) + '" r="' + (mini ? 3.5 : 5) + '" class="cb-pt" style="--c:' + b.colors[p.s] + '" tabindex="0" data-seg="p' + k + '"' +
         tip(p.t.title + ' · ' + X.label + ' ' + fmt(p.x, X.unit) + ', ' + Y.label + ' ' + fmt(p.y, Y.unit) + (cfg.series ? ' · ' + p.s : '')) + '/>';
     });
     return s + '</svg>';
@@ -586,28 +577,174 @@
       if (asNew) { item.id = C.uid('ch'); board.push(item); } else board = board.map((b) => (b.id === item.id ? item : b));
       keep(LS_BOARD, board);
       setCfg({ id: item.id, title: item.title });
-      C.toast(asNew ? 'Saved to your board' : 'Chart updated');
-      const bd = el.querySelector('.cb-board'); if (bd && asNew) bd.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      C.toast(asNew ? 'Saved to your board' : 'Chart updated', { action: 'View board', onAction: () => C.go('board') });
       return;
     }
+    // tapping anywhere else cancels a picked field
+    if (ui.picked && !t.closest('.cb-fields')) { ui.picked = null; render(); }
+  }
+  /* ================= Board page ================= */
+  let elB = null;
+  const withCfg = (item, fn) => { const saved = cfg; cfg = Object.assign({}, BLANK, item); try { return fn(); } finally { cfg = saved; } };
+
+  const boardView = C.views.board = {
+    title: 'Board',
+    mount(root) {
+      elB = root;
+      board = load(LS_BOARD, []);
+      root.innerHTML = '<section class="page bd-page"><header class="page-head"><p class="eyebrow"><a href="#insights" class="cb-back">' + icon('chevL') + 'Insights</a></p>' +
+        '<div class="bd-title"><h1 class="display">Board</h1><a href="#charts" class="btn primary sm">' + icon('plus') + '<span>New chart</span></a></div>' +
+        '<p class="muted cb-lede">Tap any bar, slice, point or dot to see the tasks behind it.</p></header><div id="bd-root"></div></section>';
+      root.addEventListener('click', onBoardClick);
+      root.addEventListener('pointerover', (e) => { if (e.pointerType === 'mouse') boardTip(e.target); });
+      root.addEventListener('focusin', (e) => boardTip(e.target));
+      root.addEventListener('keydown', (e) => { const n = e.target.closest('[data-seg]'); if (n && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); n.dispatchEvent(new MouseEvent('click', { bubbles: true })); } });
+      renderBoard();
+    },
+    update() { if (elB) renderBoard(); },
+    unmount() { elB = null; closeRecords(); }
+  };
+
+  function renderBoard() {
+    const root = elB && elB.querySelector('#bd-root');
+    if (!root) return;
+    if (!board.length) {
+      root.innerHTML = '<div class="st-sec bd-empty">' + icon('board') + '<h2>Your board is empty</h2><p class="muted">Build a chart in the Chart builder and choose <b>Save to board</b>. It will show up here.</p><a href="#charts" class="btn primary">' + icon('pie') + '<span>Open Chart builder</span></a></div>';
+      return;
+    }
+    const narrow = matchMedia('(max-width: 640px)').matches;
+    const size = narrow ? { W: 360, H: 260 } : { W: 560, H: 320 };
+    root.innerHTML = '<div class="bd-grid">' + board.map((item) => withCfg(item, () =>
+      '<article class="st-sec bd-card" data-card="' + item.id + '">' +
+      '<header class="cb-card-head"><h2>' + esc(item.title || autoTitle()) + '</h2>' +
+      '<div class="cb-card-btns"><button type="button" class="icon-btn sm" data-edit="' + item.id + '" aria-label="Edit chart" title="Edit in Chart builder">' + icon('settings') + '</button>' +
+      '<button type="button" class="icon-btn sm" data-del="' + item.id + '" aria-label="Remove chart" title="Remove">' + icon('trash') + '</button></div></header>' +
+      '<p class="bd-filters muted">' + esc(filterText()) + '</p>' +
+      '<div class="cb-plot bd-plot">' + plot(false, size) + '</div>' +
+      '<div class="ins-legend cb-legend">' + legendHtml() + '<span class="ins-cap" aria-live="polite"></span></div>' +
+      '</article>')).join('') + '</div>';
+  }
+  function filterText() {
+    const st = { all: 'All tasks', open: 'Open tasks', done: 'Done tasks' }[cfg.status] || 'All tasks';
+    const rg = { all: 'all time', '4w': 'last 4 weeks', '12w': 'last 12 weeks', '6m': 'last 6 months', '1y': 'last year' }[cfg.range] || 'all time';
+    return st + ' · ' + rg;
+  }
+  function boardTip(t) {
+    const node = t && t.closest && t.closest('[data-tip]');
+    if (!node || !elB || !elB.contains(node)) return;
+    const card = node.closest('.bd-card'); if (!card) return;
+    card.querySelectorAll('.tipped').forEach((x) => x.classList.remove('tipped'));
+    node.classList.add('tipped');
+    const cap = card.querySelector('.ins-cap'); if (cap) cap.textContent = node.dataset.tip + ' · click to see tasks';
+  }
+
+  function onBoardClick(e) {
+    const t = e.target;
+    const seg = t.closest('[data-seg]');
+    if (seg) { const card = seg.closest('[data-card]'); return openRecords(card.dataset.card, seg.dataset.seg, seg.dataset.tip); }
     const ed = t.closest('[data-edit]');
     if (ed) {
       const item = board.find((b) => b.id === ed.dataset.edit);
-      if (item) { setCfg(Object.assign({}, BLANK, item)); el.querySelector('.cb-main').scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+      if (item) { Object.assign(cfg, BLANK, item); keep(LS_DRAFT, cfg); C.go('charts'); }
       return;
     }
     const del = t.closest('[data-del]');
     if (del) {
       const idx = board.findIndex((b) => b.id === del.dataset.del); if (idx < 0) return;
       const [gone] = board.splice(idx, 1); keep(LS_BOARD, board);
-      if (cfg.id === gone.id) cfg.id = null;
-      render();
-      C.toast('Removed “' + (gone.title || 'chart') + '”', { action: 'Undo', onAction: () => { board.splice(idx, 0, gone); keep(LS_BOARD, board); render(); } });
-      return;
+      if (cfg.id === gone.id) { cfg.id = null; keep(LS_DRAFT, cfg); }
+      renderBoard();
+      C.toast('Removed “' + (gone.title || 'chart') + '”', { action: 'Undo', onAction: () => { board.splice(idx, 0, gone); keep(LS_BOARD, board); renderBoard(); } });
     }
-    // tapping anywhere else cancels a picked field
-    if (ui.picked && !t.closest('.cb-fields')) { ui.picked = null; render(); }
   }
+
+  /* ---------- records modal ---------- */
+  let modal = null;
+  function recordsFor(item, seg) {
+    return withCfg(item, () => {
+      const b = build();
+      if (seg[0] === 'p') {
+        const p = b.points[+seg.slice(1)];
+        if (!p) return null;
+        const same = b.points.filter((q) => Math.abs(q.x - p.x) < 0.05 && Math.abs(q.y - p.y) < 0.05);
+        return { title: item.title || autoTitle(), label: NUMS[cfg.x].label + ' ' + fmt(p.x, NUMS[cfg.x].unit) + ' · ' + NUMS[cfg.y].label + ' ' + fmt(p.y, NUMS[cfg.y].unit), color: b.colors[p.s], tasks: same.map((q) => q.t) };
+      }
+      const [cs, ss] = seg.split(':'), ci = +cs, all = ss === '*';
+      const cat = b.cats[ci], ser = all ? { key: '_', label: '', color: 'var(--accent)' } : b.series[+ss];
+      if (!cat || !ser) return null;
+      const sKey = ser.key;
+      const tasks = b.raw.filter((r) => r.x === cat.key && (sKey === '_' || r.s === sKey)).map((r) => r.t);
+      const label = cat.label + (sKey !== '_' ? ' · ' + ser.label : '');
+      return { title: item.title || autoTitle(), label, color: all || b.colorByCat || cfg.type === 'pie' || cfg.type === 'donut' ? (b.colorByCat || cfg.type === 'pie' || cfg.type === 'donut' ? cat.color : 'var(--accent)') : ser.color, tasks };
+    });
+  }
+
+  function openRecords(itemId, seg, tipText) {
+    const item = board.find((b) => b.id === itemId);
+    if (!item) return;
+    const r = recordsFor(item, seg);
+    if (!r) return;
+    closeRecords(true);
+    const tk = D.todayKey();
+    const tasks = r.tasks.slice().sort((a, b) => (a.done - b.done) || ((a.due || '9999') < (b.due || '9999') ? -1 : (a.due || '9999') > (b.due || '9999') ? 1 : S().levelRank(a.levelId) - S().levelRank(b.levelId)));
+    const open = tasks.filter((t) => !t.done).length;
+    const wrap = document.createElement('div');
+    wrap.className = 'rec-wrap';
+    wrap.innerHTML = '<div class="sheet-backdrop" data-rclose></div>' +
+      '<div class="rec" role="dialog" aria-modal="true" aria-labelledby="rec-title" style="--c:' + r.color + '">' +
+      '<header class="rec-head"><span class="rec-swatch" aria-hidden="true"></span><div class="rec-titles"><span class="eyebrow">' + esc(r.title) + '</span>' +
+      '<h2 id="rec-title">' + esc(r.label) + '</h2>' +
+      '<p class="muted">' + (tipText && tipText.indexOf(':') > -1 && !/task/.test(tipText.slice(tipText.indexOf(':'))) ? esc(tipText.slice(tipText.indexOf(':') + 1).trim()) + ' · ' : '') + tasks.length + ' task' + (tasks.length === 1 ? '' : 's') + (tasks.length && open !== tasks.length ? ' · ' + open + ' open' : '') + '</p></div>' +
+      '<button type="button" class="icon-btn" data-rclose aria-label="Close">' + icon('x') + '</button></header>' +
+      '<div class="rec-list">' + (tasks.length ? tasks.map((t) => recRow(t, tk)).join('') : '<p class="muted rec-none">No tasks here.</p>') + '</div>' +
+      '</div>';
+    document.getElementById('overlay-root').appendChild(wrap);
+    const prevFocus = document.activeElement;
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeRecords(); }
+      else if (e.key === 'Tab') { // keep focus inside the dialog
+        const f = wrap.querySelectorAll('button'); if (!f.length) return;
+        if (e.shiftKey && document.activeElement === f[0]) { e.preventDefault(); f[f.length - 1].focus(); }
+        else if (!e.shiftKey && document.activeElement === f[f.length - 1]) { e.preventDefault(); f[0].focus(); }
+      }
+    };
+    document.addEventListener('keydown', onKey, true);
+    wrap.addEventListener('click', (e) => {
+      if (e.target.closest('[data-rclose]')) return closeRecords();
+      const ck = e.target.closest('[data-rcheck]');
+      if (ck) {
+        const id = ck.dataset.rcheck; C.completeTask(id);
+        const t = S().get(id); const row = ck.closest('.rec-row');
+        if (t && row) { row.classList.toggle('done', !t.done); ck.setAttribute('aria-pressed', String(!t.done)); }
+        return;
+      }
+      const row = e.target.closest('[data-rec]');
+      if (row) { const id = row.dataset.rec; closeRecords(); C.openEditor(id); }
+    });
+    modal = { wrap, onKey, prevFocus };
+    requestAnimationFrame(() => { wrap.classList.add('in'); const c = wrap.querySelector('.rec-head .icon-btn'); if (c) c.focus(); });
+  }
+  function recRow(t, tk) {
+    const ty = S().typeOf(t), lv = S().levelOf(t);
+    const late = !t.done && t.due && t.due < tk;
+    return '<div class="rec-row' + (t.done ? ' done' : '') + '" style="--lv:' + (lv ? lv.color : 'var(--ink-3)') + '">' +
+      '<button type="button" class="check sm" data-rcheck="' + t.id + '" aria-pressed="' + !!t.done + '" aria-label="' + (t.done ? 'Reopen' : 'Complete') + ' ' + esc(t.title) + '">' + icon('check') + '</button>' +
+      '<button type="button" class="rec-main" data-rec="' + t.id + '"><span class="rec-body"><span class="rec-t">' + esc(t.title) + '</span>' +
+      '<span class="rec-meta">' + (t.due ? '<span class="' + (late ? 'late' : '') + '">' + icon('calendar') + esc(C.relDate(t.due)) + (t.time ? ' ' + esc(C.fmtTime(t.time)) : '') + '</span>' : '') +
+      (ty ? '<span class="type-tag" style="--c:' + ty.color + '">' + icon(ty.glyph) + esc(ty.name) + '</span>' : '') +
+      (lv ? '<span class="rec-lv"><i></i>' + esc(lv.name) + '</span>' : '') +
+      ((t.subtasks || []).length ? '<span>' + icon('rows') + (t.subtasks.filter((x) => x.done).length) + '/' + t.subtasks.length + '</span>' : '') +
+      (t.assigneeId || S().isAssignedToMe(t) ? C.whoChip(t, true) : '') +
+      '</span></span>' + icon('chevR') + '</button></div>';
+  }
+  function closeRecords(instant) {
+    if (!modal) return;
+    const { wrap, onKey, prevFocus } = modal; modal = null;
+    document.removeEventListener('keydown', onKey, true);
+    if (instant) wrap.remove(); else { wrap.classList.remove('in'); setTimeout(() => wrap.remove(), 180); }
+    if (prevFocus && prevFocus.focus && document.contains(prevFocus)) try { prevFocus.focus({ preventScroll: true }); } catch (e) { /* gone */ }
+  }
+
   function onChange(e) {
     const t = e.target;
     if (t.dataset.cfg) return setCfg({ [t.dataset.cfg]: t.value });

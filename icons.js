@@ -26,6 +26,7 @@
     rows: '<rect x="3.5" y="4.5" width="17" height="6" rx="2"/><rect x="3.5" y="13.5" width="17" height="6" rx="2"/>',
     chart: '<path d="M4 20.5h16"/><rect x="5.5" y="12" width="3.2" height="6" rx="1"/><rect x="10.4" y="7.5" width="3.2" height="10.5" rx="1"/><rect x="15.3" y="4" width="3.2" height="14" rx="1"/>',
     pie: '<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5V12l6 6"/>',
+    board: '<rect x="3.5" y="3.5" width="7.5" height="9" rx="2"/><rect x="13" y="3.5" width="7.5" height="5.5" rx="2"/><rect x="3.5" y="14.5" width="7.5" height="6" rx="2"/><rect x="13" y="11" width="7.5" height="9.5" rx="2"/>',
     cloud: '<path d="M7 18.5h10a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.2 10.6 4 4 0 0 0 7 18.5z"/>',
     device: '<rect x="6.5" y="3" width="11" height="18" rx="2.5"/><path d="M11 17.5h2"/>',
     sparkle: '<path d="M12 3.5l1.8 5.2 5.2 1.8-5.2 1.8L12 17.5l-1.8-5.2-5.2-1.8 5.2-1.8z"/><path d="M18.5 16v4M16.5 18h4"/>',

@@ -7,6 +7,7 @@ A build-free task app: plain HTML, CSS and JavaScript files. No bundler, no npm 
 - **Sharing**: assign a task to anyone who has signed in with Google; they see it in their own list
 - **Insights**: completed vs. added per week, on-time rate, streak, a daily activity heatmap, and breakdowns by type, importance, overdue age and shared tasks
 - **Chart builder**: drag fields (type, importance, status, dates, assignee…) onto X axis, Values and Split by to make column, bar, line, area, pie, donut and scatter charts; save favorites to a board
+- **Board**: your saved charts on their own page; tap any bar, slice or point to open a list of the tasks behind it, complete them, or open one to edit
 - **Settings**: task types (name, color, icon, order), importance levels (name, color, rank, default), theme, week start, backup and restore
 
 ## Run it
@@ -96,7 +97,7 @@ palette.js            command menu
 list.js               Tasks page
 calendar.js           Calendar page
 insights.js           Insights page (charts)
-charts.js             Chart builder page
+charts.js             Chart builder and Board pages
 settings.js           Settings page
 app.js                app shell, routing, shortcuts
 firestore.rules       Firestore security rules
