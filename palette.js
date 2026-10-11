@@ -22,7 +22,8 @@
       { label: 'New task', hint: 'N', ic: 'plus', run: () => C.openEditor() },
       { label: 'Go to Tasks', hint: '1', ic: 'list', run: () => C.go('list') },
       { label: 'Go to Calendar', hint: '2', ic: 'calendar', run: () => C.go('calendar') },
-      { label: 'Go to Settings', hint: '3', ic: 'settings', run: () => C.go('settings') },
+      { label: 'Go to Insights', hint: '3', ic: 'chart', run: () => C.go('insights') },
+      { label: 'Go to Settings', hint: '4', ic: 'settings', run: () => C.go('settings') },
       { label: 'Toggle dark mode', hint: 'D', ic: 'moon', run: () => C.cycleTheme() },
       { label: 'Show completed tasks', ic: 'check', run: () => { S.setPrefs({ showDone: !S.state.prefs.showDone }); C.go('list'); } },
       { label: 'Switch list to table view', ic: 'table', run: () => { S.setPrefs({ listMode: S.state.prefs.listMode === 'table' ? 'agenda' : 'table' }); C.go('list'); } }

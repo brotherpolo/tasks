@@ -3,10 +3,11 @@
   const C = window.Cadence;
   const { D, esc, icon } = C;
   const S = C.store;
-  const ROUTES = ['list', 'calendar', 'settings'];
+  const ROUTES = ['list', 'calendar', 'insights', 'settings'];
   const NAV = [
     { id: 'list', label: 'Tasks', ic: 'list' },
     { id: 'calendar', label: 'Calendar', ic: 'calendar' },
+    { id: 'insights', label: 'Insights', ic: 'chart' },
     { id: 'settings', label: 'Settings', ic: 'settings' }
   ];
   const root = document.documentElement;
@@ -130,12 +131,13 @@
 
     document.getElementById('topbar').innerHTML =
       '<div class="brand">' + LOGO + '<span class="brand-name">Cadence</span></div><span class="spacer"></span>' + C.syncPill(true) +
+      '<button type="button" class="icon-btn" data-pal aria-label="Search">' + icon('search') + '</button>' +
       '<button type="button" class="icon-btn" data-theme-toggle aria-label="Toggle dark mode">' + icon(isDark() ? 'sun' : 'moon') + '</button>';
 
     document.getElementById('tabbar').innerHTML =
       tab('list', 'Tasks', 'list', c.list) + tab('calendar', 'Calendar', 'calendar') +
       '<button type="button" class="fab" data-new aria-label="New task">' + icon('plus') + '</button>' +
-      '<button type="button" class="tab" data-pal>' + icon('search') + '<span>Search</span></button>' +
+      tab('insights', 'Insights', 'chart') +
       tab('settings', 'Settings', 'settings');
   }
   function sideTypes(st) {
@@ -243,7 +245,7 @@
     const k = e.key;
     if (k === 'n' || k === 'N') { e.preventDefault(); C.openEditor(); }
     else if (k === '/') { e.preventDefault(); if (current !== 'list') { C.go('list'); setTimeout(() => C.views.list.focusSearch(), 60); } else C.views.list.focusSearch(); }
-    else if (k === '1' || k === '2' || k === '3') C.go(ROUTES[Number(k) - 1]);
+    else if (k === '1' || k === '2' || k === '3' || k === '4') C.go(ROUTES[Number(k) - 1]);
     else if (k === 'd' || k === 'D') C.cycleTheme();
     else if ((k === 't' || k === 'T') && current === 'calendar') C.views.calendar.shift(0);
     else if (k === 'ArrowLeft' && current === 'calendar') C.views.calendar.shift(-1);
