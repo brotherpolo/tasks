@@ -68,32 +68,44 @@
     while (byDay[k]) { streak++; k = D.addKey(k, -1); }
 
     // by type: open now vs completed in range
-    const typeRows = st.types.map((ty) => ({ name: ty.name, color: ty.color, open: 0, done: 0, id: ty.id }));
-    const none = { name: 'No type', color: 'var(--ink-3)', open: 0, done: 0, id: '' };
+    // every task counts, including ones someone else assigned to you: their type is matched to yours by
+    // name, and types you don't have get their own row in the owner's color
+    const typeRows = st.types.map((ty) => ({ name: ty.name, color: ty.color, open: 0, done: 0 }));
+    const none = { name: 'No type', color: 'var(--ink-3)', open: 0, done: 0 };
     tasks.forEach((t) => {
-      if (!S().isOwner(t)) return; // other people's types don't map onto yours
-      const row = typeRows.find((r) => r.id === t.typeId) || none;
+      const ty = S().typeOf(t);
+      let row = ty ? typeRows.find((r) => r.name.toLowerCase() === String(ty.name).toLowerCase()) : none;
+      if (!row) { row = { name: ty.name, color: ty.color || 'var(--ink-3)', open: 0, done: 0 }; typeRows.push(row); }
       if (!t.done) row.open++; else if (weekIdx(doneKey(t)) >= 0) row.done++;
     });
     typeRows.push(none);
 
     // open by importance
-    const levelRows = st.levels.map((l) => ({ name: l.name, color: l.color, id: l.id, n: 0 }));
-    tasks.forEach((t) => { if (t.done || !S().isOwner(t)) return; const r = levelRows.find((x) => x.id === t.levelId); if (r) r.n++; });
-
-    // sharing: tasks I assigned to others, and tasks others assigned to me
-    const people = new Map();
-    let toMe = 0, toMeOpen = 0;
+    const levelRows = st.levels.map((l) => ({ name: l.name, color: l.color, n: 0 }));
     tasks.forEach((t) => {
-      if (S().isAssignedToMe(t)) { toMe++; if (!t.done) toMeOpen++; return; }
-      if (!t.assigneeId || !S().isOwner(t)) return;
-      const p = people.get(t.assigneeId) || { uid: t.assigneeId, name: t.assigneeName, email: t.assigneeEmail, open: 0, done: 0, overdue: 0, days: [] };
-      if (t.done) { p.done++; if (t.doneAt && t.createdAt) p.days.push((t.doneAt - t.createdAt) / 864e5); }
-      else { p.open++; if (t.due && t.due < tk) p.overdue++; }
-      people.set(t.assigneeId, p);
+      if (t.done) return;
+      const lv = S().levelOf(t); if (!lv) return;
+      let r = levelRows.find((x) => x.name.toLowerCase() === String(lv.name).toLowerCase());
+      if (!r) { r = { name: lv.name, color: lv.color || 'var(--ink-3)', n: 0 }; levelRows.push(r); }
+      r.n++;
     });
 
-    return { tasks, weeks, byDay, doneInRange, onTime, withDue, open, overdue, ages, streak, typeRows: typeRows.filter((r) => r.open || r.done), levelRows, people: [...people.values()], toMe, toMeOpen, ws, tk };
+    // sharing: one row per handoff (who assigned → who's doing it), in either direction
+    const people = new Map();
+    const me = st.owner;
+    tasks.forEach((t) => {
+      if (!t.assigneeId || t.assigneeId === t.ownerId) return;
+      const fromMe = !t.ownerId || t.ownerId === me, toMe = t.assigneeId === me;
+      const from = { uid: t.ownerId || me, name: fromMe ? 'You' : C.firstName(t.ownerName, t.ownerEmail), email: t.ownerEmail };
+      const to = { uid: t.assigneeId, name: toMe ? 'You' : C.firstName(t.assigneeName, t.assigneeEmail), email: t.assigneeEmail };
+      const key = from.uid + '>' + to.uid;
+      const p = people.get(key) || { from, to, avatar: fromMe ? to : from, toMe, open: 0, done: 0, overdue: 0, days: [] };
+      if (t.done) { p.done++; if (t.doneAt && t.createdAt) p.days.push((t.doneAt - t.createdAt) / 864e5); }
+      else { p.open++; if (t.due && t.due < tk) p.overdue++; }
+      people.set(key, p);
+    });
+
+    return { tasks, weeks, byDay, doneInRange, onTime, withDue, open, overdue, ages, streak, typeRows: typeRows.filter((r) => r.open || r.done), levelRows: levelRows.filter((r, i) => i < st.levels.length || r.n), people: [...people.values()], ws, tk };
   }
 
   /* ---------- render ---------- */
@@ -127,7 +139,7 @@
       card('By type', 'Open tasks now, and tasks completed in the selected range.', typeChart(d), legend([['var(--ink-2)', 'Open', 'solid'], ['var(--ink-2)', 'Completed', 'soft']])) +
       card('Overdue', d.overdue ? 'Open tasks past their due date, by how late they are.' : 'Nothing is past due. Nice.', agingChart(d)) +
       card('Open by importance', 'What’s still on your plate, from most to least important.', levelChart(d)) +
-      (d.people.length || d.toMe ? card('Shared tasks', 'Tasks you’ve assigned to others, and how they’re going.', sharedTable(d)) : '') +
+      (d.people.length ? card('Shared tasks', 'Who assigned what to whom, and how it’s going.', sharedTable(d)) : '') +
       '</div>';
     // show the most recent weeks of the heatmap first on narrow screens
     const hm = root.querySelector('.hm-scroll'); if (hm) hm.scrollLeft = hm.scrollWidth;
@@ -222,18 +234,17 @@
     return hbars(d.levelRows.map((r) => ({ name: r.name, color: r.color, val: String(r.n), tip: r.name + ': ' + plural(r.n, 'open task'), segs: [{ cls: 'solid', v: r.n }] })), max);
   }
   function sharedTable(d) {
-    const rows = d.people.sort((a, b) => (b.open + b.done) - (a.open + a.done)).map((p) => {
+    // tasks assigned to you first, then the ones you handed out
+    const rows = d.people.sort((a, b) => (b.toMe - a.toMe) || ((b.open + b.done) - (a.open + a.done))).map((p) => {
       const avg = p.days.length ? p.days.reduce((a, b) => a + b, 0) / p.days.length : null;
       const total = p.open + p.done;
-      return '<div class="sh-row">' + C.avatar(p) + '<div class="sh-main"><span class="sh-name">' + esc(C.firstName(p.name, p.email)) + '</span>' +
+      return '<div class="sh-row">' + C.avatar(p.avatar) + '<div class="sh-main"><span class="sh-name">' + esc(p.from.name) + ' <span class="sh-arrow">→</span> ' + esc(p.to.name) + '</span>' +
         '<span class="sh-track"><i style="width:' + (total ? (p.done / total) * 100 : 0) + '%"></i></span>' +
         '<span class="sh-meta muted">' + p.done + ' done · ' + p.open + ' open' + (p.overdue ? ' · <b class="late">' + p.overdue + ' overdue</b>' : '') +
         (avg != null ? ' · avg ' + (avg < 1 ? '<1' : Math.round(avg)) + (Math.round(avg) === 1 || avg < 1 ? ' day' : ' days') : '') + '</span></div></div>';
     }).join('');
-    return (rows || '<p class="muted ins-none">You haven’t assigned any tasks yet.</p>') +
-      (d.toMe ? '<p class="sh-foot muted">Assigned to you by others: ' + d.toMeOpen + ' open, ' + (d.toMe - d.toMeOpen) + ' done.</p>' : '');
+    return rows || '<p class="muted ins-none">No shared tasks yet.</p>';
   }
-
   function niceMax(v) { const steps = [4, 8, 12, 20, 40, 60, 80, 100, 160, 200, 400, 800, 1000]; return steps.find((s) => s >= v) || Math.ceil(v / 1000) * 1000; }
 
   /* ---------- interaction ---------- */

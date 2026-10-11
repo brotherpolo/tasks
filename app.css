@@ -1025,3 +1025,5 @@ button.mix-key:hover { color: var(--ink); }
   .rec-head { padding-top: 24px; }
   .bd-title .btn { margin-bottom: .4em; }
 }
+.sh-arrow { color: var(--ink-3); font-weight: 400; }
+.rec-who { color: var(--ink-2); }

@@ -12,12 +12,22 @@
   const PALETTE = ['var(--accent)', '#E8743B', '#19A979', '#945ECF', '#ED4A7B', '#13A4B4', '#C9A100', '#6C8893', '#2F6497', '#BF399E'];
   const statusOf = (t, tk) => (t.done ? 'Done' : t.due && t.due < tk ? 'Overdue' : 'Open');
   const doneKey = (t) => (t.done && t.doneAt ? D.key(new Date(t.doneAt)) : null);
+  // people: "Me" is whoever is signed in; tasks without an owner are yours (made before sign-in)
+  const isMe = (uid) => !uid || uid === S().state.owner;
+  const owner = (t) => (isMe(t.ownerId) ? 'Me' : C.firstName(t.ownerName, t.ownerEmail));
+  const shared = (t) => !!(t.assigneeId && t.assigneeId !== t.ownerId);
+  const doer = (t) => (shared(t) ? (isMe(t.assigneeId) ? 'Me' : C.firstName(t.assigneeName, t.assigneeEmail)) : owner(t));
+  const meFirst = () => ['Me'];
+  const personColor = (v) => (v === 'Me' ? 'var(--accent)' : null);
+  C.handoffLabel = (t) => (shared(t) ? owner(t) + ' → ' + doer(t) : '');
 
+  const seen = {};
   const DIMS = {
-    type: { label: 'Type', ic: 'briefcase', get: (t) => { const ty = S().typeOf(t); return ty ? ty.name : 'No type'; },
-      order: () => S().state.types.map((x) => x.name).concat('No type'), color: (v) => { const ty = S().state.types.find((x) => x.name === v); return ty ? ty.color : 'var(--ink-3)'; } },
-    level: { label: 'Importance', ic: 'flag', get: (t) => { const l = S().levelOf(t); return l ? l.name : 'None'; },
-      order: () => S().state.levels.map((x) => x.name).concat('None'), color: (v) => { const l = S().state.levels.find((x) => x.name === v); return l ? l.color : 'var(--ink-3)'; } },
+    // tasks from other people carry the owner's type/importance; colors for names you don't have come from those
+    type: { label: 'Type', ic: 'briefcase', get: (t) => { const ty = S().typeOf(t); if (ty) seen[ty.name] = ty.color; return ty ? ty.name : 'No type'; },
+      order: () => S().state.types.map((x) => x.name).concat('No type'), color: (v) => { const ty = S().state.types.find((x) => x.name === v); return ty ? ty.color : seen[v] || 'var(--ink-3)'; } },
+    level: { label: 'Importance', ic: 'flag', get: (t) => { const l = S().levelOf(t); if (l) seen['lv:' + l.name] = l.color; return l ? l.name : 'None'; },
+      order: () => S().state.levels.map((x) => x.name).concat('None'), color: (v) => { const l = S().state.levels.find((x) => x.name === v); return l ? l.color : seen['lv:' + v] || 'var(--ink-3)'; } },
     status: { label: 'Status', ic: 'check', get: (t, c) => statusOf(t, c.tk), order: () => ['Open', 'Overdue', 'Done'],
       color: (v) => ({ Open: 'var(--accent)', Overdue: 'var(--danger)', Done: 'var(--ok)' }[v]) },
     due: { label: 'Due date', words: 'due date', ic: 'calendar', time: true, get: (t) => t.due || null },
@@ -27,7 +37,9 @@
       order: () => { const s = D.startOfWeek(D.today(), S().state.prefs.weekStart); return [0, 1, 2, 3, 4, 5, 6].map((i) => C.F.wday.format(D.add(s, i))); } },
     tod: { label: 'Time of day', ic: 'clock', get: (t) => { if (!t.time) return 'No time'; const h = +t.time.slice(0, 2); return h < 12 ? 'Morning' : h < 17 ? 'Afternoon' : 'Evening'; },
       order: () => ['Morning', 'Afternoon', 'Evening', 'No time'] },
-    who: { label: 'Assigned to', words: 'assignee', ic: 'heart', get: (t) => (S().isAssignedToMe(t) ? 'From ' + C.firstName(t.ownerName, t.ownerEmail) : t.assigneeId ? C.firstName(t.assigneeName, t.assigneeEmail) : 'Me') },
+    who: { label: 'Assigned to', words: 'assignee', ic: 'heart', get: (t) => doer(t), order: meFirst, color: personColor },
+    by: { label: 'Assigned by', words: 'who assigned it', ic: 'upload', get: (t) => owner(t), order: meFirst, color: personColor },
+    handoff: { label: 'Handoff', words: 'handoff', ic: 'repeat', get: (t) => (shared(t) ? owner(t) + ' → ' + doer(t) : 'Not shared'), order: () => ['Not shared'], color: (v) => (v === 'Not shared' ? 'var(--ink-3)' : null) },
     repeat: { label: 'Repeat', ic: 'repeat', get: (t) => (C.REPEATS.find((r) => r.id === (t.repeat || 'none')) || C.REPEATS[0]).label, order: () => C.REPEATS.map((r) => r.label) }
   };
   const NUMS = {
@@ -734,7 +746,7 @@
       (ty ? '<span class="type-tag" style="--c:' + ty.color + '">' + icon(ty.glyph) + esc(ty.name) + '</span>' : '') +
       (lv ? '<span class="rec-lv"><i></i>' + esc(lv.name) + '</span>' : '') +
       ((t.subtasks || []).length ? '<span>' + icon('rows') + (t.subtasks.filter((x) => x.done).length) + '/' + t.subtasks.length + '</span>' : '') +
-      (t.assigneeId || S().isAssignedToMe(t) ? C.whoChip(t, true) : '') +
+      (C.handoffLabel(t) ? '<span class="rec-who">' + icon('heart') + esc(C.handoffLabel(t)) + '</span>' : '') +
       '</span></span>' + icon('chevR') + '</button></div>';
   }
   function closeRecords(instant) {
