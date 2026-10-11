@@ -23,6 +23,7 @@
       { label: 'Go to Tasks', hint: '1', ic: 'list', run: () => C.go('list') },
       { label: 'Go to Calendar', hint: '2', ic: 'calendar', run: () => C.go('calendar') },
       { label: 'Go to Insights', hint: '3', ic: 'chart', run: () => C.go('insights') },
+      { label: 'Open Chart builder', hint: '5', ic: 'pie', run: () => C.go('charts') },
       { label: 'Go to Settings', hint: '4', ic: 'settings', run: () => C.go('settings') },
       { label: 'Toggle dark mode', hint: 'D', ic: 'moon', run: () => C.cycleTheme() },
       { label: 'Show completed tasks', ic: 'check', run: () => { S.setPrefs({ showDone: !S.state.prefs.showDone }); C.go('list'); } },

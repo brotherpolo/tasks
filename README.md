@@ -6,6 +6,7 @@ A build-free task app: plain HTML, CSS and JavaScript files. No bundler, no npm 
 - **Calendar**: month and week views; drag tasks between days or onto "Unscheduled"
 - **Sharing**: assign a task to anyone who has signed in with Google; they see it in their own list
 - **Insights**: completed vs. added per week, on-time rate, streak, a daily activity heatmap, and breakdowns by type, importance, overdue age and shared tasks
+- **Chart builder**: drag fields (type, importance, status, dates, assignee…) onto X axis, Values and Split by to make column, bar, line, area, pie, donut and scatter charts; save favorites to a board
 - **Settings**: task types (name, color, icon, order), importance levels (name, color, rank, default), theme, week start, backup and restore
 
 ## Run it
@@ -30,7 +31,7 @@ With no Firebase config, tasks are saved in that browser's local storage.
 
 ## Keyboard
 
-`N` new task · `/` search · `⌘K` / `Ctrl K` command menu · `1` `2` `3` `4` switch pages · `←` `→` move the calendar · `T` today · `D` dark mode · `X` complete focused task · `⌘↵` save in the editor
+`N` new task · `/` search · `⌘K` / `Ctrl K` command menu · `1`–`5` switch pages · `←` `→` move the calendar · `T` today · `D` dark mode · `X` complete focused task · `⌘↵` save in the editor
 
 ## Turn on sign-in and sync (Firebase)
 
@@ -95,6 +96,7 @@ palette.js            command menu
 list.js               Tasks page
 calendar.js           Calendar page
 insights.js           Insights page (charts)
+charts.js             Chart builder page
 settings.js           Settings page
 app.js                app shell, routing, shortcuts
 firestore.rules       Firestore security rules

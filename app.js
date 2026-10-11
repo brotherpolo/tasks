@@ -3,11 +3,12 @@
   const C = window.Cadence;
   const { D, esc, icon } = C;
   const S = C.store;
-  const ROUTES = ['list', 'calendar', 'insights', 'settings'];
+  const ROUTES = ['list', 'calendar', 'insights', 'settings', 'charts'];
   const NAV = [
     { id: 'list', label: 'Tasks', ic: 'list' },
     { id: 'calendar', label: 'Calendar', ic: 'calendar' },
     { id: 'insights', label: 'Insights', ic: 'chart' },
+    { id: 'charts', label: 'Chart builder', ic: 'pie' },
     { id: 'settings', label: 'Settings', ic: 'settings' }
   ];
   const root = document.documentElement;
@@ -193,7 +194,8 @@
   setInterval(() => document.querySelectorAll('[data-sync-pill]').forEach((b) => { b.outerHTML = C.syncPill(b.classList.contains('compact')); }), 30000);
 
   function tab(id, label, ic, n) {
-    return '<a href="#' + id + '" class="tab' + (current === id ? ' on' : '') + '"' + (current === id ? ' aria-current="page"' : '') + '>' +
+    const on = current === id || (id === 'insights' && current === 'charts'); // the builder lives under Insights on phones
+    return '<a href="#' + id + '" class="tab' + (on ? ' on' : '') + '"' + (on ? ' aria-current="page"' : '') + '>' +
       '<span class="tab-ic">' + icon(ic) + (n ? '<span class="tab-badge mono">' + n + '</span>' : '') + '</span><span>' + label + '</span></a>';
   }
 
@@ -245,7 +247,7 @@
     const k = e.key;
     if (k === 'n' || k === 'N') { e.preventDefault(); C.openEditor(); }
     else if (k === '/') { e.preventDefault(); if (current !== 'list') { C.go('list'); setTimeout(() => C.views.list.focusSearch(), 60); } else C.views.list.focusSearch(); }
-    else if (k === '1' || k === '2' || k === '3' || k === '4') C.go(ROUTES[Number(k) - 1]);
+    else if (k === '1' || k === '2' || k === '3' || k === '4' || k === '5') C.go(ROUTES[Number(k) - 1]);
     else if (k === 'd' || k === 'D') C.cycleTheme();
     else if ((k === 't' || k === 'T') && current === 'calendar') C.views.calendar.shift(0);
     else if (k === 'ArrowLeft' && current === 'calendar') C.views.calendar.shift(-1);

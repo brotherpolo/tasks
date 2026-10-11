@@ -72,7 +72,7 @@
         '<textarea id="st-json" class="sr" readonly aria-hidden="true" tabindex="-1"></textarea>') +
 
       section('Keyboard shortcuts', '',
-        '<dl class="keys">' + [['N', 'New task'], ['/', 'Search tasks'], ['⌘K / Ctrl K', 'Command menu'], ['1 · 2 · 3 · 4', 'Tasks · Calendar · Insights · Settings'], ['← →', 'Previous / next on the calendar'], ['T', 'Jump to today'], ['D', 'Cycle light / dark'], ['X', 'Complete the focused task'], ['⌘↵', 'Save in the editor']].map(([k, v]) => '<div><dt>' + k.split(' ').map((x) => /^[·/]$/.test(x) && k.length > 2 ? '<span class="muted">' + x + '</span>' : '<kbd>' + x + '</kbd>').join('') + '</dt><dd>' + v + '</dd></div>').join('') + '</dl>') +
+        '<dl class="keys">' + [['N', 'New task'], ['/', 'Search tasks'], ['⌘K / Ctrl K', 'Command menu'], ['1 · 2 · 3 · 4 · 5', 'Tasks · Calendar · Insights · Settings · Chart builder'], ['← →', 'Previous / next on the calendar'], ['T', 'Jump to today'], ['D', 'Cycle light / dark'], ['X', 'Complete the focused task'], ['⌘↵', 'Save in the editor']].map(([k, v]) => '<div><dt>' + k.split(' ').map((x) => /^[·/]$/.test(x) && k.length > 2 ? '<span class="muted">' + x + '</span>' : '<kbd>' + x + '</kbd>').join('') + '</dt><dd>' + v + '</dd></div>').join('') + '</dl>') +
 
       '</div>';
   }
